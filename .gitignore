@@ -1,0 +1,41 @@
+# Залежності
+node_modules/
+package-lock.json
+yarn.lock
+
+# Збірка
+dist/
+build/
+*.tsbuildinfo
+
+# Логи
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Змінні оточення
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Тести
+coverage/
+.nyc_output/
+
+# Тимчасові файли
+*.tmp
+*.temp
+.cache/
+
+# Документація (опціонально)
+docs/_build/
