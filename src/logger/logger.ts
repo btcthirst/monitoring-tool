@@ -1,183 +1,196 @@
 // logger/logger.ts
 /**
- * Логер для всього проекту
- * 
- * Відповідальність:
- * - Налаштування Winston логера
- * - Форматування логів для консолі та файлів
- * - Ротація лог-файлів
- * - Різні рівні логування
- * 
- * ВАЖЛИВО:
- * - Єдиний екземпляр логера для всього проекту
- * - Підтримка структурованого логування (JSON)
+ * Singleton логер для всього проєкту (Winston)
+ *
+ * Особливості:
+ * - Ініціалізується з дефолтним рівнем (info) без залежності від config/
+ * - Рівень логування можна оновити після завантаження конфігурації
+ * - Структуровані JSON логи у файли, читабельний вивід у консоль
+ * - Ротація лог-файлів (10 MB, 5 файлів)
  */
 
 import winston from 'winston';
 import path from 'path';
 import fs from 'fs';
 
-// Створення папки для логів, якщо її немає
-const logDir = path.join(process.cwd(), 'logs');
-if (!fs.existsSync(logDir)) {
-  fs.mkdirSync(logDir, { recursive: true });
+// ---------------------------------------------------------------------------
+// Константи
+// ---------------------------------------------------------------------------
+
+const LOG_DIR = path.join(process.cwd(), 'logs');
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+const MAX_FILES = 5;
+
+// ---------------------------------------------------------------------------
+// Ініціалізація директорії для логів (ліниво — тільки при першому записі)
+// ---------------------------------------------------------------------------
+
+function ensureLogDir(): string {
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  }
+  return LOG_DIR;
 }
 
-/**
- * Форматування для консолі (читаємий вигляд)
- */
+// ---------------------------------------------------------------------------
+// Визначення рівня логування
+// ---------------------------------------------------------------------------
+
+const VALID_LEVELS = ['error', 'warn', 'info', 'http', 'debug'] as const;
+type LogLevel = (typeof VALID_LEVELS)[number];
+
+function resolveLogLevel(): LogLevel {
+  const fromEnv = process.env.LOG_LEVEL?.toLowerCase();
+  if (fromEnv && VALID_LEVELS.includes(fromEnv as LogLevel)) {
+    return fromEnv as LogLevel;
+  }
+  return process.env.NODE_ENV === 'production' ? 'info' : 'debug';
+}
+
+// ---------------------------------------------------------------------------
+// Формати
+// ---------------------------------------------------------------------------
+
 const consoleFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.colorize({ all: true }),
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
-    let log = `${timestamp} [${level}]: ${message}`;
-    
-    // Додавання метаданих, якщо вони є
-    if (Object.keys(meta).length > 0) {
-      // Виключення спеціальних полів
-      const { splat, label, ...rest } = meta;
-      if (Object.keys(rest).length > 0) {
-        log += `\n  └─ ${JSON.stringify(rest, null, 2)}`;
-      }
-    }
-    
-    return log;
-  })
+    // Видаляємо внутрішні поля Winston
+    const { splat, label, ...rest } = meta as Record<string, unknown>;
+    const hasMeta = Object.keys(rest).length > 0;
+    const metaStr = hasMeta ? `\n  └─ ${JSON.stringify(rest, null, 2)}` : '';
+    return `${timestamp} [${level}]: ${message}${metaStr}`;
+  }),
 );
 
-/**
- * Форматування для файлів (JSON)
- */
 const fileFormat = winston.format.combine(
   winston.format.timestamp(),
-  winston.format.json()
-);
-
-/**
- * Форматування для помилок з стеком
- */
-const errorFormat = winston.format.combine(
-  winston.format.timestamp(),
   winston.format.errors({ stack: true }),
-  winston.format.json()
+  winston.format.json(),
 );
 
-/**
- * Конфігурація рівнів логування
- */
-const levels = {
-  error: 0,
-  warn: 1,
-  info: 2,
-  http: 3,
-  debug: 4,
-};
+// ---------------------------------------------------------------------------
+// Транспорти
+// ---------------------------------------------------------------------------
 
-/**
- * Визначення рівня логування на основі оточення
- */
-const getLogLevel = (): string => {
-  const env = process.env.NODE_ENV || 'development';
-  const configuredLevel = process.env.LOG_LEVEL?.toLowerCase();
-  
-  if (configuredLevel && levels[configuredLevel as keyof typeof levels] !== undefined) {
-    return configuredLevel;
-  }
-  
-  return env === 'production' ? 'info' : 'debug';
-};
+function buildFileTransports(): winston.transport[] {
+  const logDir = ensureLogDir();
 
-/**
- * Створення Winston логера
- */
-export const logger = winston.createLogger({
-  level: getLogLevel(),
-  levels,
-  format: fileFormat,
-  transports: [
-    // Консольний транспорт (завжди включений)
-    new winston.transports.Console({
-      format: consoleFormat,
-      level: getLogLevel(),
-    }),
-    
-    // Файл для всіх логів
+  return [
     new winston.transports.File({
       filename: path.join(logDir, 'combined.log'),
       format: fileFormat,
-      maxsize: 10 * 1024 * 1024, // 10 MB
-      maxFiles: 5,
+      maxsize: MAX_FILE_SIZE,
+      maxFiles: MAX_FILES,
       tailable: true,
     }),
-    
-    // Файл тільки для помилок
     new winston.transports.File({
       filename: path.join(logDir, 'error.log'),
       level: 'error',
-      format: errorFormat,
-      maxsize: 10 * 1024 * 1024, // 10 MB
-      maxFiles: 5,
+      format: fileFormat,
+      maxsize: MAX_FILE_SIZE,
+      maxFiles: MAX_FILES,
       tailable: true,
     }),
-  ],
-  exceptionHandlers: [
+  ];
+}
+
+function buildExceptionTransports(): winston.transport[] {
+  const logDir = ensureLogDir();
+
+  return [
     new winston.transports.File({
       filename: path.join(logDir, 'exceptions.log'),
-      format: errorFormat,
+      format: fileFormat,
     }),
-  ],
-  rejectionHandlers: [
     new winston.transports.File({
       filename: path.join(logDir, 'rejections.log'),
-      format: errorFormat,
+      format: fileFormat,
     }),
+  ];
+}
+
+// ---------------------------------------------------------------------------
+// Створення логера
+// ---------------------------------------------------------------------------
+
+const initialLevel = resolveLogLevel();
+
+export const logger = winston.createLogger({
+  level: initialLevel,
+  levels: winston.config.npm.levels,
+  format: fileFormat,
+  transports: [
+    new winston.transports.Console({
+      format: consoleFormat,
+      level: initialLevel,
+    }),
+    ...buildFileTransports(),
   ],
+  exceptionHandlers: buildExceptionTransports(),
+  rejectionHandlers: buildExceptionTransports(),
   exitOnError: false,
 });
 
+// ---------------------------------------------------------------------------
+// Публічний API
+// ---------------------------------------------------------------------------
+
 /**
- * Child логер з додатковим контекстом
+ * Оновлення рівня логування після завантаження конфігурації.
+ * Викликати з orchestrator після loadConfig().
+ */
+export function setLogLevel(level: LogLevel): void {
+  logger.level = level;
+  logger.transports.forEach((t) => {
+    t.level = level;
+  });
+}
+
+/**
+ * Увімкнення/вимкнення запису у файли.
+ * При logToFile=false — залишається тільки консоль.
+ */
+export function setFileLogging(enabled: boolean): void {
+  logger.transports.forEach((t) => {
+    if (t instanceof winston.transports.File) {
+      t.silent = !enabled;
+    }
+  });
+}
+
+/**
+ * Child-логер з фіксованим контекстом (наприклад, для кожного модуля).
+ *
+ * @example
+ * const log = createChildLogger('PoolDiscovery');
+ * log.info('Found pools', { count: 5 });
+ * // → { context: 'PoolDiscovery', message: 'Found pools', count: 5 }
  */
 export function createChildLogger(context: string): winston.Logger {
   return logger.child({ context });
 }
 
 /**
- * Логування з додатковими метаданими
- */
-export function logWithMeta(
-  level: keyof typeof levels,
-  message: string,
-  meta: Record<string, unknown>
-): void {
-  logger.log(level, message, meta);
-}
-
-/**
- * Логування помилки з деталями
+ * Логування помилки з повним стеком.
  */
 export function logError(error: Error | string, context?: string): void {
   if (error instanceof Error) {
     logger.error(error.message, {
-      stack: error.stack,
       name: error.name,
-      context,
+      stack: error.stack,
+      ...(context ? { context } : {}),
     });
   } else {
-    logger.error(error, { context });
+    logger.error(error, { ...(context ? { context } : {}) });
   }
 }
 
 /**
- * Логування продуктивності (таймер)
+ * Логування тривалості операції.
  */
-export function logPerformance(
-  operation: string,
-  durationMs: number,
-  success: boolean = true
-): void {
-  const level = success ? 'info' : 'warn';
-  logger.log(level, `Performance: ${operation}`, {
+export function logPerformance(operation: string, durationMs: number, success = true): void {
+  logger.log(success ? 'debug' : 'warn', `Performance: ${operation}`, {
     operation,
     durationMs,
     success,
@@ -185,83 +198,37 @@ export function logPerformance(
 }
 
 /**
- * Логування RPC запитів
+ * Логування RPC виклику (рівень debug).
  */
 export function logRpcCall(
   method: string,
-  params: unknown,
   durationMs: number,
-  success: boolean = true
+  success = true,
+  params?: unknown,
 ): void {
-  const level = process.env.LOG_LEVEL === 'debug' ? 'debug' : 'http';
-  logger.log(level, `RPC Call: ${method}`, {
+  logger.debug(`RPC: ${method}`, {
     method,
-    params: typeof params === 'object' ? JSON.stringify(params).slice(0, 200) : params,
     durationMs,
     success,
+    ...(params !== undefined
+      ? { params: JSON.stringify(params).slice(0, 200) }
+      : {}),
   });
 }
 
 /**
- * Логування арбітражних можливостей
+ * Логування знайденої арбітражної можливості.
  */
 export function logOpportunity(
   profit: number,
   profitPercent: number,
   buyPool: string,
-  sellPool: string
+  sellPool: string,
 ): void {
   logger.info('Arbitrage opportunity detected', {
     profit,
     profitPercent,
     buyPool: buyPool.slice(0, 8),
     sellPool: sellPool.slice(0, 8),
-    timestamp: new Date().toISOString(),
   });
 }
-
-/**
- * Спеціальний HTTP логер (для Express, якщо знадобиться)
- */
-export const httpLogger = {
-  write: (message: string): void => {
-    logger.http(message.trim());
-  },
-};
-
-/**
- * Функція для тестування логера (тільки для розробки)
- */
-export function testLogger(): void {
-  logger.debug('Debug message - for development');
-  logger.info('Info message - normal operation');
-  logger.warn('Warning message - something suspicious');
-  logger.error('Error message - something failed');
-  
-  // Тест з метаданими
-  logger.info('Test with metadata', {
-    userId: 123,
-    action: 'test',
-    duration: 150,
-  });
-  
-  // Тест помилки зі стеком
-  try {
-    throw new Error('Test error');
-  } catch (error) {
-    logError(error as Error, 'testLogger');
-  }
-}
-
-// Експорт публічного API
-export default {
-  logger,
-  createChildLogger,
-  logWithMeta,
-  logError,
-  logPerformance,
-  logRpcCall,
-  logOpportunity,
-  httpLogger,
-  testLogger,
-};

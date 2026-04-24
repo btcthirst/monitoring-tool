@@ -1,223 +1,247 @@
 // core/pricing.ts
 /**
- * Чиста математика для CPMM (Constant Product Market Maker)
- * - Всі операції з великими числами через bigint
- * - Перевірки на переповнення
- * - Симуляція свапів з урахуванням fee
- * - Ніяких side effects
+ * Чиста математика для CPMM (Constant Product Market Maker).
+ *
+ * Правила модуля:
+ * - Жодних side effects, жодних залежностей від Solana/RPC/logger
+ * - Всі функції — чисті (pure)
+ * - bigint для сирих даних з блокчейну, number для розрахунків
  */
 
 import { RawPool, NormalizedPool, ValidationResult } from './types';
 
+// ---------------------------------------------------------------------------
+// Конвертація між bigint та number
+// ---------------------------------------------------------------------------
+
 /**
- * Нормалізація значення з bigint в number з урахуванням decimals
- * @throws {Error} якщо число занадто велике для number
+ * Нормалізація суми з bigint в number з урахуванням decimals.
+ *
+ * @throws {Error} якщо ціла частина перевищує MAX_SAFE_INTEGER
  */
 export function normalizeAmount(amount: bigint, decimals: number): number {
   const divisor = BigInt(10 ** decimals);
   const integerPart = amount / divisor;
   const fractionalPart = amount % divisor;
-  
-  // Перевірка на переповнення (max safe integer в JS ≈ 9e15)
-  const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
-  if (integerPart > maxSafe) {
-    throw new Error(`Amount ${amount} exceeds MAX_SAFE_INTEGER after normalization`);
+
+  if (integerPart > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(
+      `Amount ${amount} exceeds MAX_SAFE_INTEGER after normalization (decimals: ${decimals})`,
+    );
   }
-  
-  const fractional = Number(fractionalPart) / Number(divisor);
-  return Number(integerPart) + fractional;
+
+  return Number(integerPart) + Number(fractionalPart) / Number(divisor);
 }
 
 /**
- * Конвертація number в bigint з урахуванням decimals
- * @throws {Error} якщо число має занадто багато знаків після коми
+ * Конвертація number назад у bigint з урахуванням decimals.
+ *
+ * @throws {Error} якщо перетворення втрачає точність
  */
 export function denormalizeAmount(amount: number, decimals: number): bigint {
-  const multiplier = BigInt(10 ** decimals);
   const amountStr = amount.toFixed(decimals);
   const [integer, fraction = ''] = amountStr.split('.');
-  const paddedFraction = fraction.padEnd(decimals, '0');
-  const fullAmountStr = integer + paddedFraction;
-  
+  const fullStr = integer + fraction.padEnd(decimals, '0');
+
   try {
-    return BigInt(fullAmountStr);
-  } catch (error) {
-    throw new Error(`Failed to denormalize amount ${amount} with decimals ${decimals}`);
+    return BigInt(fullStr);
+  } catch {
+    throw new Error(`Failed to denormalize ${amount} with decimals ${decimals}`);
   }
 }
 
+// ---------------------------------------------------------------------------
+// Валідація
+// ---------------------------------------------------------------------------
+
 /**
- * Перевірка безпеки резервів (немає переповнення при множенні)
+ * Перевірка резервів пулу перед розрахунками.
  */
 export function validateReserves(reserveA: bigint, reserveB: bigint): ValidationResult {
-  if (reserveA === 0n || reserveB === 0n) {
-    return { isValid: false, error: 'Zero reserve detected' };
+  if (reserveA === 0n) {
+    return { isValid: false, error: 'Reserve A is zero' };
   }
-  
-  // Перевірка, що множення не викличе переповнення
-  // max bigint практично необмежений, але перевіряємо логічні межі
-  const maxProduct = 2n ** 256n; // 2^256 - практичний ліміт для Solana
-  if (reserveA * reserveB > maxProduct) {
-    return { isValid: false, error: 'Reserve product exceeds safe limit' };
+  if (reserveB === 0n) {
+    return { isValid: false, error: 'Reserve B is zero' };
   }
-  
   return { isValid: true };
 }
 
 /**
- * Нормалізація пулу (перетворення RawPool → NormalizedPool)
+ * Перевірка розміру угоди відносно ліквідності пулу.
+ * За замовчуванням угода не повинна перевищувати 10% резерву.
  */
-export function normalizePool(rawPool: RawPool): NormalizedPool {
-  const reserveA = normalizeAmount(rawPool.reserveA, rawPool.decimalsA);
-  const reserveB = normalizeAmount(rawPool.reserveB, rawPool.decimalsB);
-  
+export function validateTradeSize(
+  pool: NormalizedPool,
+  amountIn: number,
+  maxPercentOfPool = 0.1,
+): ValidationResult {
+  const maxAmount = pool.reserveA * maxPercentOfPool;
+
+  if (amountIn > maxAmount) {
+    return {
+      isValid: false,
+      error: `Trade size ${amountIn} exceeds ${maxPercentOfPool * 100}% of pool liquidity (max: ${maxAmount.toFixed(6)})`,
+      maxAmount,
+    };
+  }
+
+  return { isValid: true, maxAmount };
+}
+
+// ---------------------------------------------------------------------------
+// Нормалізація пулу
+// ---------------------------------------------------------------------------
+
+/**
+ * Перетворення RawPool → NormalizedPool.
+ * Конвертує bigint резерви в number та fee з bps у десятковий дріб.
+ */
+export function normalizePool(raw: RawPool): NormalizedPool {
   return {
-    address: rawPool.address,
-    tokenA: rawPool.tokenA,
-    tokenB: rawPool.tokenB,
-    reserveA,
-    reserveB,
-    fee: rawPool.feeBps / 10000,
-    decimalsA: rawPool.decimalsA,
-    decimalsB: rawPool.decimalsB,
+    address: raw.address,
+    tokenA: raw.tokenA,
+    tokenB: raw.tokenB,
+    reserveA: normalizeAmount(raw.reserveA, raw.decimalsA),
+    reserveB: normalizeAmount(raw.reserveB, raw.decimalsB),
+    fee: raw.feeBps / 10_000,
+    decimalsA: raw.decimalsA,
+    decimalsB: raw.decimalsB,
   };
 }
 
+// ---------------------------------------------------------------------------
+// Ціноутворення
+// ---------------------------------------------------------------------------
+
 /**
- * Отримання spot price (теоретична ціна без slippage)
+ * Spot price: скільки tokenB дає один tokenA (без впливу на ціну).
+ * Повертає 0 якщо резерв A нульовий.
  */
 export function getSpotPrice(pool: NormalizedPool): number {
   if (pool.reserveA === 0) return 0;
   return pool.reserveB / pool.reserveA;
 }
 
-/**
- * Нормалізована ціна (вже враховує decimals через NormalizedPool)
- */
-export function getNormalizedPrice(pool: NormalizedPool): number {
-  return getSpotPrice(pool);
-}
+// ---------------------------------------------------------------------------
+// CPMM формула свапу
+// ---------------------------------------------------------------------------
 
 /**
- * Основна формула CPMM для розрахунку вихідної суми
- * 
- * Формула:
- * amountOut = (amountIn * (1 - fee) * reserveOut) / (reserveIn + amountIn * (1 - fee))
- * 
- * @throws {Error} при переповненні або невалідних значеннях
+ * Розрахунок вихідної суми за формулою CPMM:
+ *
+ *   amountOut = (amountIn × (1 − fee) × reserveOut)
+ *             / (reserveIn + amountIn × (1 − fee))
+ *
+ * Повертає 0 при невалідних вхідних даних замість виключення —
+ * caller (arbitrage.ts) вирішує що робити з нульовим результатом.
+ *
+ * @throws {Error} тільки при невалідному fee (програмна помилка)
  */
 export function getAmountOut(
   amountIn: number,
   reserveIn: number,
   reserveOut: number,
-  fee: number
+  fee: number,
 ): number {
-  // Валідація вхідних даних
-  if (amountIn <= 0) return 0;
-  if (reserveIn <= 0 || reserveOut <= 0) return 0;
+  if (amountIn <= 0 || reserveIn <= 0 || reserveOut <= 0) return 0;
+
   if (fee < 0 || fee >= 1) {
-    throw new Error(`Invalid fee: ${fee}`);
+    throw new Error(`Invalid fee value: ${fee}. Must be in [0, 1).`);
   }
-  
-  // Перевірка, що amountIn не більше 10% від резерву (запобігання вбивству пулу)
-  const maxAmountIn = reserveIn * 0.1;
-  if (amountIn > maxAmountIn) {
-    throw new Error(`Amount in ${amountIn} exceeds 10% of reserve ${reserveIn}`);
-  }
-  
-  // Розрахунок з перевіркою на переповнення
+
   const amountInWithFee = amountIn * (1 - fee);
-  
-  // Перевірка потенційного переповнення при множенні
-  if (amountInWithFee > Number.MAX_SAFE_INTEGER / reserveOut) {
-    throw new Error('Potential overflow in amountOut calculation');
-  }
-  
   const numerator = amountInWithFee * reserveOut;
   const denominator = reserveIn + amountInWithFee;
-  
+
   if (denominator === 0) return 0;
-  
+
   return numerator / denominator;
 }
 
 /**
- * Симуляція свапу A → B
+ * Симуляція свапу A → B в межах одного пулу.
  */
 export function simulateSwapAtoB(pool: NormalizedPool, amountIn: number): number {
   return getAmountOut(amountIn, pool.reserveA, pool.reserveB, pool.fee);
 }
 
 /**
- * Симуляція свапу B → A
+ * Симуляція свапу B → A в межах одного пулу.
  */
 export function simulateSwapBtoA(pool: NormalizedPool, amountIn: number): number {
   return getAmountOut(amountIn, pool.reserveB, pool.reserveA, pool.fee);
 }
 
+// ---------------------------------------------------------------------------
+// Двох-hop арбітраж
+// ---------------------------------------------------------------------------
+
 /**
- * Симуляція двох-hop арбітражу A → B → A через два пули
- * 
- * @param buyPool - де купуємо B за A
- * @param sellPool - де продаємо B назад в A
- * @param amountIn - вхідна сума A
- * @returns amountOut - вихідна сума A після обох свапів
+ * Симуляція арбітражу через два пули: A → B (buyPool) → A (sellPool).
+ *
+ * Slippage розраховується як відносне відхилення від spot price:
+ *   slippage = (actualOut − expectedOut) / expectedOut
+ * Від'ємне значення означає що отримали менше за spot (нормальна ситуація).
+ *
+ * @returns amountOut — сума A після обох свапів
+ * @returns slippageBuy — відносне відхилення на першому свапі
+ * @returns slippageSell — відносне відхилення на другому свапі
  */
 export function simulateTwoHopArbitrage(
   buyPool: NormalizedPool,
   sellPool: NormalizedPool,
-  amountIn: number
+  amountIn: number,
 ): { amountOut: number; slippageBuy: number; slippageSell: number } {
-  // Отримуємо spot ціни до свапу
-  const spotPriceBuy = getSpotPrice(buyPool);
-  const spotPriceSell = getSpotPrice(sellPool);
-  
-  // A → B через buyPool
+  const spotBuy = getSpotPrice(buyPool);   // B per A
+  const spotSell = getSpotPrice(sellPool); // B per A
+
+  // Hop 1: A → B через buyPool
   const amountIntermediate = simulateSwapAtoB(buyPool, amountIn);
-  
-  // Розрахунок прослизання на першому свапі
-  const expectedIntermediate = amountIn * spotPriceBuy;
-  const slippageBuy = expectedIntermediate === 0 ? 0 : 
-    (amountIntermediate - expectedIntermediate) / expectedIntermediate;
-  
-  // B → A через sellPool
+
+  // Slippage на купівлі
+  const expectedIntermediate = spotBuy === 0 ? 0 : amountIn * spotBuy;
+  const slippageBuy =
+    expectedIntermediate === 0
+      ? 0
+      : (amountIntermediate - expectedIntermediate) / expectedIntermediate;
+
+  // Hop 2: B → A через sellPool
   const amountOut = simulateSwapBtoA(sellPool, amountIntermediate);
-  
-  // Розрахунок прослизання на другому свапі
-  const expectedOut = amountIntermediate * (1 / spotPriceSell);
-  const slippageSell = expectedOut === 0 ? 0 :
-    (amountOut - expectedOut) / expectedOut;
-  
+
+  // Slippage на продажу
+  const expectedOut = spotSell === 0 ? 0 : amountIntermediate / spotSell;
+  const slippageSell =
+    expectedOut === 0
+      ? 0
+      : (amountOut - expectedOut) / expectedOut;
+
   return { amountOut, slippageBuy, slippageSell };
 }
 
-/**
- * Розрахунок валового прибутку
- */
+// ---------------------------------------------------------------------------
+// Розрахунок прибутку
+// ---------------------------------------------------------------------------
+
+/** Валовий прибуток = amountOut − amountIn */
 export function calculateGrossProfit(amountIn: number, amountOut: number): number {
   return amountOut - amountIn;
 }
 
-/**
- * Розрахунок чистого прибутку (з урахуванням tx cost)
- */
-export function calculateNetProfit(
-  grossProfit: number,
-  txCost: number
-): number {
+/** Чистий прибуток = grossProfit − txCost */
+export function calculateNetProfit(grossProfit: number, txCost: number): number {
   return grossProfit - txCost;
 }
 
-/**
- * Розрахунок відсотку прибутку
- */
+/** Відсоток прибутку відносно вхідної суми */
 export function calculateProfitPercent(profit: number, amountIn: number): number {
   if (amountIn === 0) return 0;
   return (profit / amountIn) * 100;
 }
 
 /**
- * Перевірка, чи є угода прибутковою з урахуванням slippage
+ * Перевірка прибутковості угоди з урахуванням slippage.
+ * Використовує maxSlippage як десятковий дріб (0.05 = 5%).
  */
 export function isProfitable(
   grossProfit: number,
@@ -225,61 +249,30 @@ export function isProfitable(
   minProfit: number,
   maxSlippage: number,
   slippageBuy: number,
-  slippageSell: number
+  slippageSell: number,
 ): { profitable: boolean; reason?: string } {
   const netProfit = grossProfit - txCost;
-  
-  if (netProfit <= minProfit) {
-    return { profitable: false, reason: `Net profit ${netProfit} <= ${minProfit}` };
-  }
-  
-  if (Math.abs(slippageBuy) > maxSlippage) {
-    return { profitable: false, reason: `Buy slippage ${slippageBuy} > ${maxSlippage}` };
-  }
-  
-  if (Math.abs(slippageSell) > maxSlippage) {
-    return { profitable: false, reason: `Sell slippage ${slippageSell} > ${maxSlippage}` };
-  }
-  
-  return { profitable: true };
-}
 
-/**
- * Валідація розміру угоди (не більше X% від ліквідності)
- */
-export function validateTradeSize(
-  pool: NormalizedPool,
-  amountIn: number,
-  maxPercentOfPool: number = 0.1
-): ValidationResult {
-  const maxAmount = pool.reserveA * maxPercentOfPool;
-  
-  if (amountIn > maxAmount) {
+  if (netProfit <= minProfit) {
     return {
-      isValid: false,
-      error: `Trade size ${amountIn} exceeds ${maxPercentOfPool * 100}% of pool liquidity (max: ${maxAmount})`,
-      maxAmount,
+      profitable: false,
+      reason: `Net profit ${netProfit.toFixed(6)} ≤ min ${minProfit}`,
     };
   }
-  
-  return { isValid: true, maxAmount };
-}
 
-// Експорт публічного API
-export default {
-  normalizeAmount,
-  denormalizeAmount,
-  validateReserves,
-  normalizePool,
-  getSpotPrice,
-  getNormalizedPrice,
-  getAmountOut,
-  simulateSwapAtoB,
-  simulateSwapBtoA,
-  simulateTwoHopArbitrage,
-  calculateGrossProfit,
-  calculateNetProfit,
-  calculateProfitPercent,
-  isProfitable,
-  validateTradeSize,
-};
+  if (Math.abs(slippageBuy) > maxSlippage) {
+    return {
+      profitable: false,
+      reason: `Buy slippage ${(slippageBuy * 100).toFixed(3)}% exceeds max ${(maxSlippage * 100).toFixed(2)}%`,
+    };
+  }
+
+  if (Math.abs(slippageSell) > maxSlippage) {
+    return {
+      profitable: false,
+      reason: `Sell slippage ${(slippageSell * 100).toFixed(3)}% exceeds max ${(maxSlippage * 100).toFixed(2)}%`,
+    };
+  }
+
+  return { profitable: true };
+}

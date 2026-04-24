@@ -1,9 +1,11 @@
 // core/arbitrage.ts
 /**
- * Пошук арбітражних можливостей між пулами
- * - Використовує реальну симуляцію свапів
- * - Враховує tx costs
- * - Фільтрує за slippage та мінімальним прибутком
+ * Пошук арбітражних можливостей між пулами.
+ *
+ * Правила модуля:
+ * - Жодних залежностей від Solana/RPC/logger/UI
+ * - Тільки чиста бізнес-логіка
+ * - Помилки пробрасуються вгору або повертають null — не логуються тут
  */
 
 import {
@@ -11,7 +13,7 @@ import {
   NormalizedPool,
   ArbitrageConfig,
   Opportunity,
-  ValidationResult,
+  OpportunityStats,
 } from './types';
 
 import {
@@ -24,8 +26,13 @@ import {
   validateTradeSize,
 } from './pricing';
 
+// ---------------------------------------------------------------------------
+// Хелпери для роботи з парами пулів
+// ---------------------------------------------------------------------------
+
 /**
- * Перевірка, що пули мають однакову пару токенів
+ * Перевірка що два пули торгують однаковою парою токенів
+ * (незалежно від порядку tokenA/tokenB).
  */
 export function isSamePair(a: NormalizedPool, b: NormalizedPool): boolean {
   return (
@@ -35,232 +42,182 @@ export function isSamePair(a: NormalizedPool, b: NormalizedPool): boolean {
 }
 
 /**
- * Отримання порядку токенів для пулу відносно quote токена
- * Повертає напрямок свапу (true = прямий, false = зворотній)
+ * Канонічний ключ пари токенів (відсортовані адреси через ':').
+ * Використовується для групування пулів.
  */
-export function getSwapDirection(
-  pool: NormalizedPool,
-  quoteMint: string
-): { isDirect: boolean; reserveIn: number; reserveOut: number } {
-  if (pool.tokenA === quoteMint) {
-    // Купуємо tokenB за quoteMint (прямий напрямок)
-    return { isDirect: true, reserveIn: pool.reserveA, reserveOut: pool.reserveB };
-  } else if (pool.tokenB === quoteMint) {
-    // Купуємо tokenA за quoteMint (потрібен зворотній свап)
-    return { isDirect: false, reserveIn: pool.reserveB, reserveOut: pool.reserveA };
-  }
-  
-  throw new Error(`Quote token ${quoteMint} not found in pool`);
+function pairKey(tokenA: string, tokenB: string): string {
+  return [tokenA, tokenB].sort().join(':');
 }
 
+// ---------------------------------------------------------------------------
+// Головна функція
+// ---------------------------------------------------------------------------
+
 /**
- * Знаходження всіх арбітражних можливостей
- * 
+ * Знаходження всіх арбітражних можливостей серед масиву пулів.
+ *
  * Алгоритм:
- * 1. Нормалізуємо всі пули
- * 2. Групуємо за парою токенів
- * 3. Для кожної пари пулів симулюємо арбітраж
- * 4. Фільтруємо за прибутковістю
- * 
- * @param rawPools - масив сирих пулів з блокчейну
- * @param config - конфігурація арбітражу
- * @returns масив можливостей, відсортованих за net profit
+ * 1. Нормалізуємо всі пули (bigint → number)
+ * 2. Групуємо за канонічним ключем пари токенів
+ * 3. Для кожної групи перебираємо всі унікальні пари пулів (i, j)
+ * 4. Перевіряємо обидва напрямки арбітражу
+ * 5. Повертаємо відфільтровані та відсортовані можливості
+ *
+ * @param rawPools — сирі пули з блокчейну
+ * @param config   — параметри арбітражу
+ * @returns масив можливостей, відсортованих за netProfit (найкращі зверху)
  */
 export function findArbitrageOpportunities(
   rawPools: RawPool[],
-  config: ArbitrageConfig
+  config: ArbitrageConfig,
 ): Opportunity[] {
-  const opportunities: Opportunity[] = [];
-  
-  if (rawPools.length < 2) return opportunities;
-  
-  // Крок 1: Нормалізація всіх пулів
-  const pools: NormalizedPool[] = rawPools.map(pool => normalizePool(pool));
-  
-  // Крок 2: Групування за парою токенів (оптимізація)
-  const poolsByPair = new Map<string, NormalizedPool[]>();
-  
+  if (rawPools.length < 2) return [];
+
+  // Крок 1: нормалізація
+  const pools: NormalizedPool[] = rawPools.map(normalizePool);
+
+  // Крок 2: групування за парою
+  const byPair = new Map<string, NormalizedPool[]>();
   for (const pool of pools) {
-    const sortedTokens = [pool.tokenA, pool.tokenB].sort();
-    const key = `${sortedTokens[0]}:${sortedTokens[1]}`;
-    
-    if (!poolsByPair.has(key)) {
-      poolsByPair.set(key, []);
-    }
-    poolsByPair.get(key)!.push(pool);
+    const key = pairKey(pool.tokenA, pool.tokenB);
+    const group = byPair.get(key) ?? [];
+    group.push(pool);
+    byPair.set(key, group);
   }
-  
-  // Крок 3: Пошук арбітражу всередині кожної пари
-  for (const [_, poolsOfPair] of poolsByPair) {
-    if (poolsOfPair.length < 2) continue;
-    
-    // Перебираємо всі унікальні пари пулів
-    for (let i = 0; i < poolsOfPair.length; i++) {
-      for (let j = i + 1; j < poolsOfPair.length; j++) {
-        const poolA = poolsOfPair[i];
-        const poolB = poolsOfPair[j];
-        
-        // Спробуємо обидва напрямки арбітражу
-        const opportunitiesFromPair = findOpportunitiesForPair(
-          poolA,
-          poolB,
-          config
-        );
-        
-        opportunities.push(...opportunitiesFromPair);
+
+  // Крок 3–4: пошук можливостей
+  const opportunities: Opportunity[] = [];
+
+  for (const group of byPair.values()) {
+    if (group.length < 2) continue;
+
+    for (let i = 0; i < group.length; i++) {
+      for (let j = i + 1; j < group.length; j++) {
+        const a = group[i]!;
+        const b = group[j]!;
+
+        const opp1 = evaluateDirection(a, b, config);
+        if (opp1) opportunities.push(opp1);
+
+        const opp2 = evaluateDirection(b, a, config);
+        if (opp2) opportunities.push(opp2);
       }
     }
   }
-  
-  // Крок 4: Сортування за чистим прибутком (найкращі зверху)
+
+  // Крок 5: сортування
   return opportunities.sort((a, b) => b.netProfit - a.netProfit);
 }
 
-/**
- * Пошук можливостей для конкретної пари пулів (обидва напрямки)
- */
-function findOpportunitiesForPair(
-  poolA: NormalizedPool,
-  poolB: NormalizedPool,
-  config: ArbitrageConfig
-): Opportunity[] {
-  const opportunities: Opportunity[] = [];
-  
-  // Напрямок 1: Купуємо в poolA, продаємо в poolB
-  const opp1 = evaluateArbitrageDirection(poolA, poolB, config);
-  if (opp1) opportunities.push(opp1);
-  
-  // Напрямок 2: Купуємо в poolB, продаємо в poolA
-  const opp2 = evaluateArbitrageDirection(poolB, poolA, config);
-  if (opp2) opportunities.push(opp2);
-  
-  return opportunities;
-}
+// ---------------------------------------------------------------------------
+// Оцінка одного напрямку
+// ---------------------------------------------------------------------------
 
 /**
- * Оцінка одного напрямку арбітражу
+ * Симуляція арбітражу: купуємо в buyPool, продаємо в sellPool.
+ * Повертає Opportunity якщо угода прибуткова, інакше null.
  */
-function evaluateArbitrageDirection(
+function evaluateDirection(
   buyPool: NormalizedPool,
   sellPool: NormalizedPool,
-  config: ArbitrageConfig
+  config: ArbitrageConfig,
 ): Opportunity | null {
-  // Перевіряємо, чи пули сумісні
   if (!isSamePair(buyPool, sellPool)) return null;
-  
+
   // Валідація розміру угоди для обох пулів
-  const buyValidation = validateTradeSize(buyPool, config.tradeSize);
-  const sellValidation = validateTradeSize(sellPool, config.tradeSize);
-  
-  if (!buyValidation.isValid || !sellValidation.isValid) {
-    return null;
-  }
-  
+  const buyCheck = validateTradeSize(buyPool, config.tradeSize);
+  const sellCheck = validateTradeSize(sellPool, config.tradeSize);
+
+  if (!buyCheck.isValid || !sellCheck.isValid) return null;
+
+  // Симуляція
+  let result: ReturnType<typeof simulateTwoHopArbitrage>;
   try {
-    // Симуляція арбітражу
-    const { amountOut, slippageBuy, slippageSell } = simulateTwoHopArbitrage(
-      buyPool,
-      sellPool,
-      config.tradeSize
-    );
-    
-    // Розрахунок прибутку
-    const grossProfit = calculateGrossProfit(config.tradeSize, amountOut);
-    const netProfit = calculateNetProfit(grossProfit, config.txCostInQuote);
-    const profitPercent = calculateProfitPercent(netProfit, config.tradeSize);
-    
-    // Перевірка прибутковості з урахуванням slippage
-    const { profitable, reason } = isProfitable(
-      grossProfit,
-      config.txCostInQuote,
-      config.minProfit,
-      config.maxSlippagePercent,
-      slippageBuy,
-      slippageSell
-    );
-    
-    if (!profitable) {
-      return null;
-    }
-    
-    // Створення об'єкту можливості
-    const opportunity: Opportunity = {
-      buyPool,
-      sellPool,
-      amountIn: config.tradeSize,
-      amountOut,
-      grossProfit,
-      txCost: config.txCostInQuote,
-      netProfit,
-      profitPercent,
-      slippageBuy,
-      slippageSell,
-      timestamp: Date.now(),
-    };
-    
-    return opportunity;
-  } catch (error) {
-    // Логування помилки (через logger, але тут без залежностей)
-    console.error(`Failed to evaluate arbitrage direction: ${error}`);
+    result = simulateTwoHopArbitrage(buyPool, sellPool, config.tradeSize);
+  } catch {
+    // Математична помилка (наприклад, переповнення) — пропускаємо пару
     return null;
   }
+
+  const { amountOut, slippageBuy, slippageSell } = result;
+
+  // Розрахунок прибутку
+  const grossProfit = calculateGrossProfit(config.tradeSize, amountOut);
+  const netProfit = calculateNetProfit(grossProfit, config.txCostInQuote);
+  const profitPercent = calculateProfitPercent(netProfit, config.tradeSize);
+
+  // Фільтр прибутковості
+  const { profitable } = isProfitable(
+    grossProfit,
+    config.txCostInQuote,
+    config.minProfit,
+    config.maxSlippage,
+    slippageBuy,
+    slippageSell,
+  );
+
+  if (!profitable) return null;
+
+  return {
+    buyPool,
+    sellPool,
+    amountIn: config.tradeSize,
+    amountOut,
+    grossProfit,
+    txCost: config.txCostInQuote,
+    netProfit,
+    profitPercent,
+    slippageBuy,
+    slippageSell,
+    timestamp: Date.now(),
+  };
 }
 
-/**
- * Фільтрація можливостей за мінімальним відсотком прибутку
- */
-export function filterByProfitPercent(
-  opportunities: Opportunity[],
-  minProfitPercent: number
-): Opportunity[] {
-  return opportunities.filter(opp => opp.profitPercent >= minProfitPercent);
-}
+// ---------------------------------------------------------------------------
+// Утиліти для роботи з результатами
+// ---------------------------------------------------------------------------
 
 /**
- * Отримання топ-N найкращих можливостей
+ * Повертає перші N можливостей (масив вже відсортований).
  */
-export function getTopOpportunities(
-  opportunities: Opportunity[],
-  limit: number
-): Opportunity[] {
+export function getTopOpportunities(opportunities: Opportunity[], limit: number): Opportunity[] {
   return opportunities.slice(0, limit);
 }
 
 /**
- * Групування можливостей за пулами (для аналізу)
+ * Фільтрація за мінімальним відсотком прибутку.
  */
-export function groupOpportunitiesByPool(
-  opportunities: Opportunity[]
-): Map<string, Opportunity[]> {
+export function filterByProfitPercent(
+  opportunities: Opportunity[],
+  minPercent: number,
+): Opportunity[] {
+  return opportunities.filter((o) => o.profitPercent >= minPercent);
+}
+
+/**
+ * Групування можливостей за адресою buy pool.
+ */
+export function groupByBuyPool(opportunities: Opportunity[]): Map<string, Opportunity[]> {
   const grouped = new Map<string, Opportunity[]>();
-  
   for (const opp of opportunities) {
-    const key = opp.buyPool.address;
-    if (!grouped.has(key)) {
-      grouped.set(key, []);
-    }
-    grouped.get(key)!.push(opp);
+    const group = grouped.get(opp.buyPool.address) ?? [];
+    group.push(opp);
+    grouped.set(opp.buyPool.address, group);
   }
-  
   return grouped;
 }
 
 /**
- * Агрегована статистика по можливостям
+ * Агрегована статистика по набору можливостей.
  */
-export function getOpportunityStats(opportunities: Opportunity[]): {
-  count: number;
-  maxProfit: number;
-  avgProfit: number;
-  totalVolume: number;
-} {
+export function getOpportunityStats(opportunities: Opportunity[]): OpportunityStats {
   if (opportunities.length === 0) {
     return { count: 0, maxProfit: 0, avgProfit: 0, totalVolume: 0 };
   }
-  
-  const profits = opportunities.map(opp => opp.netProfit);
-  const totalVolume = opportunities.reduce((sum, opp) => sum + opp.amountIn, 0);
-  
+
+  const profits = opportunities.map((o) => o.netProfit);
+  const totalVolume = opportunities.reduce((sum, o) => sum + o.amountIn, 0);
+
   return {
     count: opportunities.length,
     maxProfit: Math.max(...profits),
@@ -268,14 +225,3 @@ export function getOpportunityStats(opportunities: Opportunity[]): {
     totalVolume,
   };
 }
-
-// Експорт публічного API
-export default {
-  findArbitrageOpportunities,
-  isSamePair,
-  getSwapDirection,
-  filterByProfitPercent,
-  getTopOpportunities,
-  groupOpportunitiesByPool,
-  getOpportunityStats,
-};
