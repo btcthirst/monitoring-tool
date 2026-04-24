@@ -137,6 +137,30 @@ export const FEE_RATE_DIVISOR = 1_000_000n;
 // Статус пулу
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Seeds для PDA деривації
+// ---------------------------------------------------------------------------
+
+/**
+ * Seeds верифіковано по:
+ * raydium-io/raydium-cp-swap/programs/cp-swap/src/states/pool.rs
+ *
+ * pub const POOL_SEED: &str = "pool";
+ * pub const POOL_LP_MINT_SEED: &str = "pool_lp_mint";
+ * pub const POOL_VAULT_SEED: &str = "pool_vault";
+ * pub const OBSERVATION_SEED: &str = "observation";
+ * pub const AMM_CONFIG_SEED: &str = "amm_config";
+ */
+export const POOL_SEED = 'pool';
+export const POOL_LP_MINT_SEED = 'pool_lp_mint';
+export const POOL_VAULT_SEED = 'pool_vault';
+export const OBSERVATION_SEED = 'observation';
+export const AMM_CONFIG_SEED = 'amm_config';
+
+// ---------------------------------------------------------------------------
+// Статус пулу
+// ---------------------------------------------------------------------------
+
 /**
  * Бітова маска статусу пулу.
  * Якщо біт встановлено — відповідна операція вимкнена.

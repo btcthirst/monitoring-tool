@@ -1,64 +1,51 @@
 // services/poolService.ts
+/**
+ * Glue layer між solana/ та core/.
+ *
+ * Відповідальність:
+ * - Об'єднує RPC клієнт + pool discovery в один зручний сервіс
+ * - Надає методи для orchestrator без прямих залежностей на solana/
+ * - Кешування на рівні сервісу (делегує до poolDiscovery)
+ */
+
 import { SolanaRpcClient } from '../solana/client';
 import { findPoolsForPair, clearPoolCache } from '../solana/poolDiscovery';
 import { RawPool } from '../core/types';
 import { logger } from '../logger/logger';
 
 export class PoolService {
-  private rpcClient: SolanaRpcClient;
-  private cachedPools: Map<string, RawPool[]> = new Map();
-  private cacheTimestamp: Map<string, number> = new Map();
-  private cacheTtlMs: number = 30000; // 30 секунд
+  private readonly rpcClient: SolanaRpcClient;
 
   constructor(rpcUrl: string) {
     this.rpcClient = new SolanaRpcClient(rpcUrl);
   }
 
+  /**
+   * Пошук пулів для пари токенів.
+   * При першому виклику — повний discovery з кешуванням.
+   */
   async discoverPools(mintA: string, mintB: string): Promise<RawPool[]> {
-    const cacheKey = `${mintA}:${mintB}`;
-    const cached = this.cachedPools.get(cacheKey);
-    const timestamp = this.cacheTimestamp.get(cacheKey) || 0;
-    
-    // Використовуємо кеш якщо він свіжий
-    if (cached && Date.now() - timestamp < this.cacheTtlMs) {
-      logger.debug('Using cached pools from service', { 
-        mintA, 
-        mintB, 
-        count: cached.length 
-      });
-      return cached;
-    }
-    
-    // Пошук пулів через poolDiscovery
-    const pools = await findPoolsForPair(this.rpcClient, mintA, mintB);
-    
-    // Оновлення кешу
-    this.cachedPools.set(cacheKey, pools);
-    this.cacheTimestamp.set(cacheKey, Date.now());
-    
-    return pools;
+    logger.debug('PoolService.discoverPools', { mintA, mintB });
+    return findPoolsForPair(this.rpcClient, mintA, mintB, true);
   }
 
+  /**
+   * Примусове оновлення пулів (без кешу).
+   * Використовується при re-discovery після помилки.
+   */
   async refreshPools(mintA: string, mintB: string): Promise<RawPool[]> {
-    // Примусове оновлення (ігноруємо кеш)
-    logger.info('Force refreshing pools', { mintA, mintB });
-    const pools = await findPoolsForPair(this.rpcClient, mintA, mintB);
-    
-    const cacheKey = `${mintA}:${mintB}`;
-    this.cachedPools.set(cacheKey, pools);
-    this.cacheTimestamp.set(cacheKey, Date.now());
-    
-    return pools;
+    logger.debug('PoolService.refreshPools (no cache)', { mintA, mintB });
+    return findPoolsForPair(this.rpcClient, mintA, mintB, false);
   }
 
+  /**
+   * Очищення кешу пулів.
+   */
   clearCache(): void {
-    this.cachedPools.clear();
-    this.cacheTimestamp.clear();
     clearPoolCache();
-    logger.info('Pool service cache cleared');
   }
 
-  async healthCheck(): Promise<boolean> {
-    return this.rpcClient.healthCheck();
+  getRpcClient(): SolanaRpcClient {
+    return this.rpcClient;
   }
 }

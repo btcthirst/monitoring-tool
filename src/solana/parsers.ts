@@ -4,7 +4,7 @@
  *
  * Важливо:
  * - Резерви пулу — це баланси vault акаунтів (SPL Token accounts),
- *   а НЕ поля в PoolState. Тому parsePoolAccount приймає vault балансу
+ *   а НЕ поля в PoolState. Тому parsePoolAccount приймає vault баланси
  *   окремими параметрами.
  * - Fee читається з amm_config акаунту кожного пулу.
  * - Всі офсети верифіковано по constants.ts.
@@ -27,9 +27,6 @@ import {
 // Типи
 // ---------------------------------------------------------------------------
 
-/**
- * Розпарсені поля PoolState (без резервів — вони у vault акаунтах).
- */
 export type ParsedPoolState = {
   address: string;
   ammConfig: PublicKey;
@@ -48,16 +45,10 @@ export type ParsedPoolState = {
 // Хелпери
 // ---------------------------------------------------------------------------
 
-/**
- * Читання u64 (little-endian) з буферу.
- */
 function readU64LE(buffer: Buffer, offset: number): bigint {
   return buffer.readBigUInt64LE(offset);
 }
 
-/**
- * Читання PublicKey (32 байти) з буферу.
- */
 function readPublicKey(buffer: Buffer, offset: number): PublicKey {
   return new PublicKey(buffer.slice(offset, offset + 32));
 }
@@ -66,13 +57,6 @@ function readPublicKey(buffer: Buffer, offset: number): PublicKey {
 // Парсинг PoolState
 // ---------------------------------------------------------------------------
 
-/**
- * Парсинг акаунту пулу — витягує структурні поля (без резервів).
- *
- * @param address     — адреса акаунту пулу
- * @param accountInfo — дані акаунту з блокчейну
- * @returns ParsedPoolState або null при помилці
- */
 export function parsePoolState(
   address: PublicKey,
   accountInfo: AccountInfo<Buffer>,
@@ -143,17 +127,7 @@ export function parsePoolState(
 // Парсинг AmmConfig (fee rate)
 // ---------------------------------------------------------------------------
 
-/**
- * Читання trade fee rate з акаунту AmmConfig.
- *
- * trade_fee_rate — u64, одиниці: 1e-6
- * 2500 → 2500 / 1_000_000 = 0.0025 = 0.25% → 25 bps
- *
- * @returns fee в basis points або DEFAULT_FEE_BPS при помилці
- */
-export function parseAmmConfigFee(
-  accountInfo: AccountInfo<Buffer>,
-): number {
+export function parseAmmConfigFee(accountInfo: AccountInfo<Buffer>): number {
   const data = accountInfo.data;
 
   if (data.length < AMM_CONFIG_OFFSETS.TRADE_FEE_RATE + 8) {
@@ -163,7 +137,6 @@ export function parseAmmConfigFee(
 
   try {
     const feeRate = readU64LE(data, AMM_CONFIG_OFFSETS.TRADE_FEE_RATE);
-    // Конвертація: feeRate / 1_000_000 * 10_000 = feeRate / 100 (в bps)
     const feeBps = Number(feeRate / (FEE_RATE_DIVISOR / 10_000n));
     return feeBps > 0 ? feeBps : DEFAULT_FEE_BPS;
   } catch {
@@ -176,22 +149,6 @@ export function parseAmmConfigFee(
 // Збірка RawPool
 // ---------------------------------------------------------------------------
 
-/**
- * Збірка RawPool з ParsedPoolState + vault балансів + fee.
- *
- * Цю функцію викликає poolDiscovery після того як:
- * 1. Розпарсив PoolState (parsePoolState)
- * 2. Прочитав баланси vault акаунтів (client.getTokenAccountBalance)
- * 3. Прочитав fee з amm_config (parseAmmConfigFee)
- *
- * @param poolState    — розпарсений PoolState
- * @param reserve0     — баланс token0Vault (bigint, raw units)
- * @param reserve1     — баланс token1Vault (bigint, raw units)
- * @param feeBps       — комісія в basis points
- * @param expectedMintA — фільтр: пул повинен містити цей токен
- * @param expectedMintB — фільтр: пул повинен містити цей токен
- * @returns RawPool або null якщо пул не відповідає очікуваній парі
- */
 export function buildRawPool(
   poolState: ParsedPoolState,
   reserve0: bigint,
@@ -203,9 +160,15 @@ export function buildRawPool(
   const token0Str = poolState.token0Mint.toString();
   const token1Str = poolState.token1Mint.toString();
 
-  // Верифікація що пул відповідає очікуваній парі
-  const [expA, expB] = [expectedMintA, expectedMintB].sort();
-  const [tok0, tok1] = [token0Str, token1Str].sort();
+  // Використовуємо явні змінні замість destructuring щоб уникнути
+  // 'possibly undefined' з noUncheckedIndexedAccess
+  const sortedExpected = [expectedMintA, expectedMintB].sort();
+  const sortedActual = [token0Str, token1Str].sort();
+
+  const expA = sortedExpected[0] ?? '';
+  const expB = sortedExpected[1] ?? '';
+  const tok0 = sortedActual[0] ?? '';
+  const tok1 = sortedActual[1] ?? '';
 
   if (tok0 !== expA || tok1 !== expB) {
     logger.debug('Pool does not match expected token pair', {
@@ -241,19 +204,6 @@ export function buildRawPool(
 // Зворотна сумісність для orchestrator (refreshPoolData)
 // ---------------------------------------------------------------------------
 
-/**
- * Повний парсинг акаунту пулу з уже відомими vault балансами.
- * Використовується в orchestrator.refreshPoolData де vault баланси
- * читаються окремо.
- *
- * @param address       — адреса пулу
- * @param accountInfo   — дані PoolState акаунту
- * @param expectedMintA — очікуваний mint A
- * @param expectedMintB — очікуваний mint B
- * @param reserve0      — поточний баланс vault 0 (вже прочитаний)
- * @param reserve1      — поточний баланс vault 1 (вже прочитаний)
- * @param feeBps        — fee (вже прочитаний з amm_config або дефолт)
- */
 export function parsePoolAccount(
   address: PublicKey,
   accountInfo: AccountInfo<Buffer>,
@@ -265,6 +215,7 @@ export function parsePoolAccount(
 ): RawPool | null {
   const poolState = parsePoolState(address, accountInfo);
   if (!poolState) return null;
+
   if (!poolState.isSwapEnabled) {
     logger.debug('Swap disabled for pool', { address: address.toString().slice(0, 8) });
     return null;
@@ -277,10 +228,6 @@ export function parsePoolAccount(
 // Валідація
 // ---------------------------------------------------------------------------
 
-/**
- * Швидка перевірка чи акаунт може бути CPMM пулом
- * (без повного парсингу).
- */
 export function isValidCpmmPoolAccount(accountInfo: AccountInfo<Buffer>): boolean {
   return (
     !accountInfo.executable &&

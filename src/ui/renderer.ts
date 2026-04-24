@@ -1,26 +1,35 @@
 // ui/renderer.ts
 /**
- * Рендерер для виводу даних в консоль
- * 
+ * Рендерер для виводу арбітражних можливостей в консоль.
+ *
  * Відповідальність:
- * - Відображення таблиць з арбітражними можливостями
- * - Форматування виводу з кольорами
- * - Оновлення екрану в реальному часі
- * 
- * ВАЖЛИВО:
- * - Не містить бізнес-логіки
- * - Тільки візуалізація даних
+ * - Відображення live-оновлюваної таблиці
+ * - Форматування з кольорами через formatters.ts
+ * - Жодної бізнес-логіки
  */
 
 import Table from 'cli-table3';
 import chalk from 'chalk';
 import { Opportunity } from '../core/types';
-import { formatAddress, formatPrice, formatProfit, formatPercent, formatNumber } from './formatters';
+import {
+  formatAddress,
+  formatNumber,
+  formatProfit,
+  formatPercent,
+  formatSlippage,
+  formatFee,
+  formatTradeSize,
+  formatSeparator,
+  formatKeyValue,
+  formatRelativeTime,
+  padVisible,
+} from './formatters';
 import { formatDuration } from '../utils/time';
 
-/**
- * Опції рендерера
- */
+// ---------------------------------------------------------------------------
+// Типи
+// ---------------------------------------------------------------------------
+
 export interface RenderOptions {
   minProfit: number;
   quoteMint: string;
@@ -30,132 +39,93 @@ export interface RenderOptions {
   maxOpportunities?: number;
 }
 
-/**
- * Статистика для виводу
- */
-interface RenderStats {
-  totalOpportunities: number;
-  totalPools?: number;
-  lastUpdateTime: number;
-  cycleTimeMs?: number;
-  rpcCalls?: number;
-}
+// ---------------------------------------------------------------------------
+// Головний рендерер
+// ---------------------------------------------------------------------------
 
-/**
- * Головний клас рендерера
- */
 export class Renderer {
-  private lastRenderTime: number = 0;
-  private renderCount: number = 0;
-  private opportunitiesHistory: Opportunity[][] = [];
-
-  constructor() {
-    // Встановлюємо кодування для правильної роботи з Unicode
-    process.stdout.setDefaultEncoding?.('utf-8');
-  }
+  private renderCount = 0;
+  private lastRenderTime = 0;
+  private sessionOpportunities = 0;
 
   /**
-   * Основний метод рендерингу
+   * Головний метод — очищує екран та рендерить повний layout.
    */
-  render(opportunities: Opportunity[], options: RenderOptions, stats?: RenderStats): void {
-    // Зберігаємо в історію
-    this.opportunitiesHistory.push(opportunities);
-    if (this.opportunitiesHistory.length > 10) {
-      this.opportunitiesHistory.shift();
-    }
-
-    // Очищення екрану
+  render(opportunities: Opportunity[], options: RenderOptions): void {
     this.clearScreen();
-
-    // Вивід хедера
     this.renderHeader(options);
-
-    // Вивід статистики (якщо є)
-    if (stats) {
-      this.renderStats(stats);
-    }
-
-    // Вивід таблиці з можливостями
-    this.renderOpportunitiesTable(opportunities, options);
-
-    // Вивід футера
+    this.renderTable(opportunities, options);
+    this.renderTopDetail(opportunities[0], options);
     this.renderFooter(opportunities, options);
 
+    this.sessionOpportunities += opportunities.length;
     this.lastRenderTime = Date.now();
     this.renderCount++;
   }
 
   /**
-   * Очищення екрану
+   * Екран підключення до RPC.
    */
+  renderConnecting(rpcUrl: string): void {
+    this.clearScreen();
+    console.log(chalk.cyan.bold('\n🔌 Connecting to Solana RPC...'));
+    console.log(chalk.gray(`   URL: ${rpcUrl.replace(/\/\/.*@/, '//***@')}`));
+    console.log(chalk.gray('   Please wait...\n'));
+  }
+
+  /**
+   * Повідомлення про успішне підключення.
+   */
+  renderConnected(poolsFound: number): void {
+    console.log(chalk.green.bold('\n✅ Connected successfully'));
+    console.log(
+      poolsFound >= 2
+        ? chalk.green(`   Found ${poolsFound} Raydium CPMM pools — monitoring started`)
+        : chalk.yellow(`   Found ${poolsFound} pool (need ≥2 for arbitrage — waiting for more)`),
+    );
+    console.log();
+  }
+
+  /**
+   * Вивід помилки (без виходу з програми).
+   */
+  renderError(error: Error): void {
+    this.clearScreen();
+    console.log(chalk.red.bold('\n❌ Error occurred'));
+    console.log(chalk.red(`   ${error.message}`));
+    const stackLine = error.stack?.split('\n')[1]?.trim();
+    if (stackLine) console.log(chalk.gray(`   ${stackLine}`));
+    console.log(chalk.gray('\n   Monitor will retry on next cycle...\n'));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Приватні методи
+  // ---------------------------------------------------------------------------
+
   private clearScreen(): void {
-    // Очищення терміналу та переміщення курсору вгору
     console.clear();
-    // Альтернативний спосіб (для сумісності)
-    // process.stdout.write('\x1b[2J\x1b[0f');
   }
 
-  /**
-   * Вивід хедера з інформацією про моніторинг
-   */
   private renderHeader(options: RenderOptions): void {
-    const title = chalk.bold.cyan('\n🔍 Solana Arbitrage Monitor - Raydium CPMM');
-    const version = chalk.gray(' v1.0.0');
-    
-    console.log(title + version);
-    console.log(chalk.gray('═'.repeat(80)));
-    
-    // Інформація про конфігурацію
-    console.log(chalk.white('📊 Config:'));
-    console.log(chalk.gray(`   Trade Size:     ${chalk.yellow(formatNumber(options.tradeSize))} ${options.quoteMint}`));
-    console.log(chalk.gray(`   Min Profit:     ${chalk.yellow(formatNumber(options.minProfit))} ${options.quoteMint}`));
-    console.log(chalk.gray(`   Polling:        ${chalk.yellow(formatDuration(options.pollingIntervalMs))}`));
-    
-    if (options.showSlippage) {
-      console.log(chalk.gray(`   Max Slippage:   ${chalk.yellow('<5%')}`));
-    }
-    
-    console.log(chalk.gray('═'.repeat(80)));
+    console.log(chalk.bold.cyan('\n🔍 Solana Arbitrage Monitor') + chalk.gray(' — Raydium CPMM'));
+    console.log(formatSeparator());
+    console.log(
+      formatKeyValue('Trade size:', formatTradeSize(options.tradeSize, 'USDC')) + '   ' +
+      formatKeyValue('Min profit:', chalk.yellow(formatNumber(options.minProfit, 6))) + '   ' +
+      formatKeyValue('Interval:', chalk.yellow(formatDuration(options.pollingIntervalMs))),
+    );
+    console.log(formatSeparator());
   }
 
-  /**
-   * Вивід статистики роботи
-   */
-  private renderStats(stats: RenderStats): void {
-    console.log(chalk.white('📈 Stats:'));
-    console.log(chalk.gray(`   Opportunities:  ${chalk.green(stats.totalOpportunities.toString())}`));
-    
-    if (stats.totalPools) {
-      console.log(chalk.gray(`   Pools:          ${chalk.cyan(stats.totalPools.toString())}`));
-    }
-    
-    if (stats.cycleTimeMs) {
-      const color = stats.cycleTimeMs > 1000 ? chalk.yellow : chalk.green;
-      console.log(chalk.gray(`   Cycle Time:     ${color(formatDuration(stats.cycleTimeMs))}`));
-    }
-    
-    if (stats.rpcCalls) {
-      console.log(chalk.gray(`   RPC Calls:      ${chalk.magenta(stats.rpcCalls.toString())}`));
-    }
-    
-    console.log(chalk.gray('═'.repeat(80)));
-  }
+  private renderTable(opportunities: Opportunity[], options: RenderOptions): void {
+    const maxDisplay = options.maxOpportunities ?? 15;
+    const slice = opportunities.slice(0, maxDisplay);
 
-  /**
-   * Вивід таблиці з арбітражними можливостями
-   */
-  private renderOpportunitiesTable(opportunities: Opportunity[], options: RenderOptions): void {
-    if (opportunities.length === 0) {
-      this.renderEmptyState();
+    if (slice.length === 0) {
+      this.renderEmpty();
       return;
     }
 
-    // Обмеження кількості виведених можливостей
-    const maxDisplay = options.maxOpportunities || 15;
-    const displayOpportunities = opportunities.slice(0, maxDisplay);
-    const hasMore = opportunities.length > maxDisplay;
-
-    // Створення таблиці
     const table = new Table({
       head: [
         chalk.cyan('Buy Pool'),
@@ -164,225 +134,129 @@ export class Renderer {
         chalk.cyan('Profit %'),
         chalk.cyan('Gross'),
         chalk.cyan('Slippage'),
+        chalk.cyan('Fee'),
       ],
-      colWidths: [28, 28, 14, 10, 12, 12],
-      style: {
-        head: [],
-        border: [],
-        compact: false,
-      },
+      colWidths: [14, 14, 14, 11, 14, 12, 8],
+      style: { head: [], border: [], compact: false },
       chars: {
-        top: '═',
-        'top-mid': '╤',
-        'top-left': '╔',
-        'top-right': '╗',
-        bottom: '═',
-        'bottom-mid': '╧',
-        'bottom-left': '╚',
-        'bottom-right': '╝',
-        left: '║',
-        'left-mid': '╟',
-        mid: '─',
-        'mid-mid': '┼',
-        right: '║',
-        'right-mid': '╢',
-        middle: '│',
+        top: '═', 'top-mid': '╤', 'top-left': '╔', 'top-right': '╗',
+        bottom: '═', 'bottom-mid': '╧', 'bottom-left': '╚', 'bottom-right': '╝',
+        left: '║', 'left-mid': '╟', mid: '─', 'mid-mid': '┼',
+        right: '║', 'right-mid': '╢', middle: '│',
       },
     });
 
-    // Додавання рядків
-    for (const opp of displayOpportunities) {
-      const isProfitable = opp.netProfit > 0;
-      
+    for (const opp of slice) {
+      const avgSlippage = (opp.slippageBuy + opp.slippageSell) / 2;
+
       table.push([
-        this.formatPoolCell(opp.buyPool.address, opp.buyPool.tokenA, opp.buyPool.tokenB),
-        this.formatPoolCell(opp.sellPool.address, opp.sellPool.tokenA, opp.sellPool.tokenB, true),
-        formatProfit(opp.netProfit, opp.netProfit > options.minProfit),
-        formatPercent(opp.profitPercent, opp.profitPercent > 0.5),
-        `${formatNumber(opp.grossProfit)} ${options.quoteMint}`,
-        this.formatSlippageCell(opp.slippageBuy, opp.slippageSell),
+        chalk.cyan(formatAddress(opp.buyPool.address, 4, 4)),
+        chalk.magenta(formatAddress(opp.sellPool.address, 4, 4)),
+        formatProfit(opp.netProfit),
+        formatPercent(opp.profitPercent, true, 3),
+        chalk.white(`${formatNumber(opp.grossProfit, 6)} USDC`),
+        formatSlippage(avgSlippage),
+        formatFee(opp.buyPool.fee),
       ]);
     }
 
     console.log(table.toString());
 
-    // Інформація про додаткові можливості
-    if (hasMore) {
-      const remaining = opportunities.length - maxDisplay;
-      console.log(chalk.gray(`\n   ... and ${remaining} more opportunities (use --limit to see more)`));
-    }
-
-    // Топ можливість з деталями
-    if (opportunities.length > 0 && opportunities[0]) {
-      this.renderTopOpportunityDetail(opportunities[0], options);
+    if (opportunities.length > maxDisplay) {
+      console.log(
+        chalk.gray(`\n  ... and ${opportunities.length - maxDisplay} more (adjust --min-profit to filter)`),
+      );
     }
   }
 
-  /**
-   * Форматування комірки з пулом
-   */
-  private formatPoolCell(address: string, tokenA: string, tokenB: string, isSell: boolean = false): string {
-    const shortAddress = formatAddress(address);
-    const direction = isSell ? '→' : '←';
-    const color = isSell ? chalk.magenta : chalk.cyan;
-    
-    return color(`${shortAddress}\n${chalk.gray(`${tokenA.slice(0, 4)} ${direction} ${tokenB.slice(0, 4)}`)}`);
+  private renderTopDetail(opp: Opportunity | undefined, options: RenderOptions): void {
+    if (!opp) return;
+
+    console.log(chalk.white('\n📊 Best Opportunity:'));
+    console.log(formatSeparator('─'));
+
+    console.log(
+      chalk.cyan('  Buy  ') + chalk.gray(opp.buyPool.address) +
+      chalk.gray(`  fee: ${(opp.buyPool.fee * 100).toFixed(2)}%`),
+    );
+    console.log(
+      chalk.magenta('  Sell ') + chalk.gray(opp.sellPool.address) +
+      chalk.gray(`  fee: ${(opp.sellPool.fee * 100).toFixed(2)}%`),
+    );
+
+    console.log(formatSeparator('─'));
+
+    console.log(
+      `  ${formatKeyValue('Amount in:', chalk.white(formatNumber(opp.amountIn, 2) + ' USDC'), 12)}` +
+      `  ${formatKeyValue('Amount out:', chalk.white(formatNumber(opp.amountOut, 6) + ' USDC'), 12)}`,
+    );
+    console.log(
+      `  ${formatKeyValue('Gross:', chalk.white(formatNumber(opp.grossProfit, 6) + ' USDC'), 12)}` +
+      `  ${formatKeyValue('Tx cost:', chalk.gray(formatNumber(opp.txCost, 6) + ' USDC'), 12)}`,
+    );
+    console.log(
+      `  ${formatKeyValue('Net profit:', chalk.green.bold(formatNumber(opp.netProfit, 6) + ' USDC'), 12)}` +
+      `  ${formatKeyValue('Profit %:', formatPercent(opp.profitPercent, true, 4), 12)}`,
+    );
+    console.log(
+      `  ${formatKeyValue('Slip buy:', formatSlippage(opp.slippageBuy), 12)}` +
+      `  ${formatKeyValue('Slip sell:', formatSlippage(opp.slippageSell), 12)}`,
+    );
   }
 
-  /**
-   * Форматування комірки з прослизанням
-   */
-  private formatSlippageCell(slippageBuy: number, slippageSell: number): string {
-    const avgSlippage = (Math.abs(slippageBuy) + Math.abs(slippageSell)) / 2;
-    const slippagePercent = avgSlippage * 100;
-    
-    let color = chalk.green;
-    let indicator = '✓';
-    
-    if (slippagePercent > 3) {
-      color = chalk.red;
-      indicator = '⚠';
-    } else if (slippagePercent > 1) {
-      color = chalk.yellow;
-      indicator = '!';
-    }
-    
-    return color(`${indicator} ${slippagePercent.toFixed(2)}%`);
+  private renderEmpty(): void {
+    console.log(chalk.yellow('\n  ⏳ No profitable opportunities found'));
+    console.log(chalk.gray('     Waiting for price discrepancies across pools...'));
+    console.log(chalk.gray('     Try lowering --min-profit or increasing --trade-size'));
   }
 
-  /**
-   * Детальна інформація про топ можливість
-   */
-  private renderTopOpportunityDetail(opportunity: Opportunity, options: RenderOptions): void {
-    console.log(chalk.white('\n📊 Top Opportunity Details:'));
-    console.log(chalk.gray('─'.repeat(80)));
-    
-    // Buy pool details
-    console.log(chalk.cyan('  Buy Pool:'));
-    console.log(chalk.gray(`    Address:   ${opportunity.buyPool.address}`));
-    console.log(chalk.gray(`    Tokens:    ${opportunity.buyPool.tokenA.slice(0, 8)}... / ${opportunity.buyPool.tokenB.slice(0, 8)}...`));
-    console.log(chalk.gray(`    Reserves:  ${formatNumber(opportunity.buyPool.reserveA)} / ${formatNumber(opportunity.buyPool.reserveB)}`));
-    console.log(chalk.gray(`    Fee:       ${(opportunity.buyPool.fee * 100).toFixed(2)}%`));
-    
-    // Sell pool details
-    console.log(chalk.magenta('  Sell Pool:'));
-    console.log(chalk.gray(`    Address:   ${opportunity.sellPool.address}`));
-    console.log(chalk.gray(`    Tokens:    ${opportunity.sellPool.tokenA.slice(0, 8)}... / ${opportunity.sellPool.tokenB.slice(0, 8)}...`));
-    console.log(chalk.gray(`    Reserves:  ${formatNumber(opportunity.sellPool.reserveA)} / ${formatNumber(opportunity.sellPool.reserveB)}`));
-    console.log(chalk.gray(`    Fee:       ${(opportunity.sellPool.fee * 100).toFixed(2)}%`));
-    
-    // Profit analysis
-    console.log(chalk.green('  Profit Analysis:'));
-    console.log(chalk.gray(`    Amount In:   ${formatNumber(opportunity.amountIn)} ${options.quoteMint}`));
-    console.log(chalk.gray(`    Amount Out:  ${formatNumber(opportunity.amountOut)} ${options.quoteMint}`));
-    console.log(chalk.gray(`    Gross:       ${formatNumber(opportunity.grossProfit)} ${options.quoteMint}`));
-    console.log(chalk.gray(`    Tx Cost:     ${formatNumber(opportunity.txCost)} ${options.quoteMint}`));
-    console.log(chalk.green(`    Net Profit:  ${formatNumber(opportunity.netProfit)} ${options.quoteMint} (${opportunity.profitPercent.toFixed(2)}%)`));
-    
-    // Slippage
-    console.log(chalk.yellow('  Slippage:'));
-    console.log(chalk.gray(`    Buy Pool:    ${(opportunity.slippageBuy * 100).toFixed(4)}%`));
-    console.log(chalk.gray(`    Sell Pool:   ${(opportunity.slippageSell * 100).toFixed(4)}%`));
-  }
-
-  /**
-   * Вивід порожнього стану (немає можливостей)
-   */
-  private renderEmptyState(): void {
-    console.log(chalk.yellow('\n  ⏳ No profitable opportunities found yet...'));
-    console.log(chalk.gray('     Waiting for price discrepancies across pools'));
-    console.log(chalk.gray('     Adjust min-profit threshold or increase trade size'));
-  }
-
-  /**
-   * Вивід футера
-   */
   private renderFooter(opportunities: Opportunity[], options: RenderOptions): void {
-    console.log(chalk.gray('\n═'.repeat(80)));
-    
-    // Час останнього оновлення
-    const lastUpdate = formatDuration(Date.now() - this.lastRenderTime);
-    console.log(chalk.gray(`   Last update:  ${new Date().toLocaleTimeString()} (${lastUpdate} ago)`));
-    
-    // Загальна кількість знайдених можливостей за сесію
-    const totalFound = this.opportunitiesHistory.reduce((sum, opps) => sum + opps.length, 0);
-    if (totalFound > 0) {
-      console.log(chalk.gray(`   Total found:  ${chalk.green(totalFound.toString())} opportunities`));
-    }
-    
-    // Інформація про рендер
-    console.log(chalk.gray(`   Renders:      ${this.renderCount}`));
-    
-    // Легенда
-    console.log(chalk.gray('\n  Legend:'));
-    console.log(chalk.gray(`    ${chalk.cyan('←')} Buy pool   ${chalk.magenta('→')} Sell pool   ${chalk.green('✓')} Low slippage   ${chalk.yellow('!')} Medium slippage   ${chalk.red('⚠')} High slippage`));
-    
-    // Інструкції
+    console.log(formatSeparator());
+
+    const now = new Date().toLocaleTimeString();
+    const sinceLastRender = this.lastRenderTime
+      ? formatRelativeTime(this.lastRenderTime)
+      : '—';
+
+    console.log(
+      chalk.gray(`  Updated: ${chalk.white(now)}`) +
+      chalk.gray(`   Last cycle: ${sinceLastRender}`) +
+      chalk.gray(`   Renders: ${this.renderCount}`) +
+      chalk.gray(`   Session opps: ${chalk.green(String(this.sessionOpportunities))}`),
+    );
+
+    console.log(chalk.gray(
+      `\n  Legend: ${chalk.cyan('buy pool')}  ${chalk.magenta('sell pool')}` +
+      `  ${chalk.green('profit > 0')}  ${chalk.yellow('slippage warn')}  ${chalk.red('high slippage')}`,
+    ));
     console.log(chalk.gray(`\n  Press ${chalk.white('Ctrl+C')} to exit`));
-  }
-
-  /**
-   * Вивід помилки
-   */
-  renderError(error: Error): void {
-    this.clearScreen();
-    console.log(chalk.red.bold('\n❌ Error occurred'));
-    console.log(chalk.red(`   ${error.message}`));
-    console.log(chalk.gray(`\n   ${error.stack?.split('\n')[1] || ''}`));
-    console.log(chalk.gray('\n   Monitor will continue...\n'));
-  }
-
-  /**
-   * Вивід повідомлення про підключення
-   */
-  renderConnecting(rpcUrl: string): void {
-    this.clearScreen();
-    console.log(chalk.cyan.bold('\n🔌 Connecting to Solana RPC...'));
-    console.log(chalk.gray(`   URL: ${rpcUrl}`));
-    console.log(chalk.gray('   Please wait...\n'));
-  }
-
-  /**
-   * Вивід повідомлення про успішне підключення
-   */
-  renderConnected(poolsFound: number): void {
-    console.log(chalk.green.bold('\n✅ Connected successfully'));
-    console.log(chalk.green(`   Found ${poolsFound} Raydium CPMM pools`));
-    console.log(chalk.gray('   Starting monitoring...\n'));
-    
-    // Невелика затримка для читання повідомлення
-    setTimeout(() => {}, 1000);
-  }
-
-  /**
-   * Скидання рендерера
-   */
-  reset(): void {
-    this.renderCount = 0;
-    this.opportunitiesHistory = [];
   }
 }
 
+// ---------------------------------------------------------------------------
+// Спрощений рендерер (один рядок, без очищення екрану)
+// ---------------------------------------------------------------------------
+
 /**
- * Простий рендерер для виводу в один рядок (без очищення екрану)
+ * SimpleRenderer — для quiet режиму або редиректу stdout у файл.
+ * Активується через --simple флаг (майбутня функція).
  */
 export class SimpleRenderer {
   render(opportunities: Opportunity[], options: RenderOptions): void {
+    const time = new Date().toLocaleTimeString();
+
     if (opportunities.length === 0) {
-      process.stdout.write(`\r⏳ No opportunities | ${new Date().toLocaleTimeString()}     `);
+      process.stdout.write(`\r⏳ No opportunities | ${time}     `);
       return;
     }
-    
-    const best = opportunities[0];
-    if (!best) return;
-    
-    const profitStr = formatProfit(best.netProfit, true);
-    process.stdout.write(`\r💰 Best: ${profitStr} | ${best.profitPercent.toFixed(2)}% | ${new Date().toLocaleTimeString()}     `);
+
+    const best = opportunities[0]!;
+    process.stdout.write(
+      `\r💰 Best: ${formatNumber(best.netProfit, 6)} USDC` +
+      ` (${best.profitPercent.toFixed(3)}%)` +
+      ` | buy: ${formatAddress(best.buyPool.address)}` +
+      ` sell: ${formatAddress(best.sellPool.address)}` +
+      ` | ${time}     `,
+    );
   }
 }
-
-// Експорт публічного API
-export default {
-  Renderer,
-  SimpleRenderer,
-};
