@@ -2,26 +2,23 @@
 /**
  * Головний оркестратор моніторингу арбітражних можливостей.
  *
- * Відповідальність:
- * - Координація всіх модулів
- * - Головний цикл моніторингу
- * - Обробка помилок та перезапуски
- * - Управління життєвим циклом
- *
- * Принцип: мінімум бізнес-логіки — тільки координація.
+ * Координує:
+ * - Pool discovery через Raydium SDK
+ * - Polling loop з оновленням резервів
+ * - Пошук арбітражних можливостей
+ * - Рендеринг результатів
  */
 
+import { PublicKey } from '@solana/web3.js';
 import { SolanaRpcClient } from '../solana/client';
 import { findPoolsForPair } from '../solana/poolDiscovery';
-import { parsePoolAccount } from '../solana/parsers';
+import { decodePoolState, isSwapEnabled, readVaultBalance, buildRawPool, parseAmmConfigFee } from '../solana/parsers';
 import { findArbitrageOpportunities, getTopOpportunities, getOpportunityStats } from './arbitrage';
-import { normalizePool } from './pricing';
-import { RawPool, NormalizedPool, ArbitrageConfig, Opportunity } from './types';
+import { RawPool, ArbitrageConfig, Opportunity } from './types';
 import { Renderer } from '../ui/renderer';
 import { logger, setLogLevel, logError, logOpportunity } from '../logger/logger';
-import { sleep, PerformanceTimer, PeriodicExecutor } from '../utils/time';
+import { PerformanceTimer, PeriodicExecutor } from '../utils/time';
 import { formatNumber } from '../utils/math';
-import { PublicKey } from '@solana/web3.js';
 
 // ---------------------------------------------------------------------------
 // Типи
@@ -74,7 +71,6 @@ export class ArbitrageOrchestrator {
   };
 
   constructor(config: OrchestratorConfig) {
-    // Зберігаємо всі потрібні поля
     this.mintA = config.mintA;
     this.mintB = config.mintB;
     this.pollingIntervalMs = config.pollingIntervalMs;
@@ -90,7 +86,6 @@ export class ArbitrageOrchestrator {
     this.rpcClient = new SolanaRpcClient(config.rpcUrl);
     this.renderer = new Renderer();
 
-    // Оновлюємо рівень логування якщо передано
     if (config.logLevel) {
       setLogLevel(config.logLevel as any);
     }
@@ -115,12 +110,9 @@ export class ArbitrageOrchestrator {
       return;
     }
 
-    logger.info('Starting arbitrage monitor...');
     this.state.isRunning = true;
-
     this.renderer.renderConnecting(this.rpcClient.getRpcUrl());
 
-    // Фаза 1: discovery пулів
     const discovered = await this.discoverPools();
     if (!discovered) {
       logger.error('Pool discovery failed, cannot start monitoring');
@@ -130,7 +122,6 @@ export class ArbitrageOrchestrator {
 
     this.renderer.renderConnected(this.state.poolsFound);
 
-    // Фаза 2: основний цикл
     this.executor = new PeriodicExecutor(
       () => this.updateCycle(),
       this.pollingIntervalMs,
@@ -138,14 +129,11 @@ export class ArbitrageOrchestrator {
     );
 
     this.executor.start();
-    logger.info('Monitoring started successfully', { pools: this.state.poolsFound });
+    logger.info('Monitoring started', { pools: this.state.poolsFound });
   }
 
   stop(): void {
-    if (!this.state.isRunning) {
-      logger.warn('Orchestrator not running');
-      return;
-    }
+    if (!this.state.isRunning) return;
 
     this.state.isRunning = false;
     this.executor?.stop();
@@ -158,7 +146,7 @@ export class ArbitrageOrchestrator {
   }
 
   // ---------------------------------------------------------------------------
-  // Фаза 1: Discovery
+  // Discovery
   // ---------------------------------------------------------------------------
 
   private async discoverPools(): Promise<boolean> {
@@ -167,21 +155,19 @@ export class ArbitrageOrchestrator {
     try {
       logger.info('Discovering pools...', { mintA: this.mintA, mintB: this.mintB });
 
-      this.rawPools = await findPoolsForPair(this.rpcClient, this.mintA, this.mintB);
+      this.rawPools = await findPoolsForPair(
+        this.rpcClient,
+        this.mintA,
+        this.mintB,
+        false, // без кешу при старті
+      );
 
       if (this.rawPools.length === 0) {
-        logger.error('No pools found for the given token pair', {
+        logger.error('No pools found for token pair', {
           mintA: this.mintA,
           mintB: this.mintB,
         });
         return false;
-      }
-
-      if (this.rawPools.length < 2) {
-        logger.warn('Only one pool found — arbitrage requires at least 2 pools', {
-          poolAddress: this.rawPools[0]?.address,
-        });
-        // Не зупиняємо — продовжуємо моніторинг, раптом з'явиться другий
       }
 
       this.state.poolsFound = this.rawPools.length;
@@ -201,23 +187,25 @@ export class ArbitrageOrchestrator {
   }
 
   // ---------------------------------------------------------------------------
-  // Фаза 2: Основний цикл
+  // Основний цикл
   // ---------------------------------------------------------------------------
 
   private async updateCycle(): Promise<void> {
     const timer = new PerformanceTimer('UpdateCycle');
 
-    // Перевірка RPC
     const healthy = await this.rpcClient.healthCheck();
     if (!healthy) {
       logger.warn('RPC health check failed, skipping cycle');
       return;
     }
 
-    // Оновлення резервів
     await this.refreshPoolData();
 
-    // Пошук можливостей
+    if (this.rawPools.length < 2) {
+      logger.warn('Less than 2 pools available, skipping arbitrage search');
+      return;
+    }
+
     const opportunities = findArbitrageOpportunities(this.rawPools, this.config);
     const topOpps = getTopOpportunities(opportunities, 15);
 
@@ -226,7 +214,6 @@ export class ArbitrageOrchestrator {
     this.state.totalOpportunities += opportunities.length;
     this.state.lastUpdateTime = Date.now();
 
-    // Рендеринг
     this.renderer.render(topOpps, {
       minProfit: this.config.minProfit,
       quoteMint: this.config.quoteMint,
@@ -234,7 +221,6 @@ export class ArbitrageOrchestrator {
       tradeSize: this.config.tradeSize,
     });
 
-    // Логування найкращої можливості
     if (opportunities.length > 0 && opportunities[0]) {
       const best = opportunities[0];
       logOpportunity(
@@ -245,11 +231,9 @@ export class ArbitrageOrchestrator {
       );
     }
 
-    // Статистика кожні 10 циклів
     if (this.state.totalUpdates % 10 === 0) {
       const stats = getOpportunityStats(opportunities);
       const { elapsedMs } = timer.stop();
-
       logger.info('Cycle stats', {
         cycle: this.state.totalUpdates,
         pools: this.state.poolsFound,
@@ -262,41 +246,81 @@ export class ArbitrageOrchestrator {
   }
 
   // ---------------------------------------------------------------------------
-  // Оновлення резервів пулів
+  // Оновлення резервів через SDK
   // ---------------------------------------------------------------------------
 
   private async refreshPoolData(): Promise<void> {
-    if (this.rawPools.length === 0) return;
+    if (this.rawPools.length === 0) {
+      await this.discoverPools();
+      return;
+    }
 
-    const addresses = this.rawPools.map((p) => new PublicKey(p.address));
-    const accounts = await this.rpcClient.getMultipleAccounts(addresses);
+    // Збираємо адреси пулів для отримання оновленого PoolState
+    const poolAddresses = this.rawPools.map((p) => new PublicKey(p.address));
+    const poolAccounts = await this.rpcClient.getMultipleAccounts(poolAddresses);
 
-    let updatedCount = 0;
-    const updatedPools: RawPool[] = [];
+    // Декодуємо оновлені PoolState → отримуємо vault адреси
+    const decodedPools: Array<{
+      address: string;
+      state: ReturnType<typeof decodePoolState>;
+    }> = [];
 
     for (const pool of this.rawPools) {
-      const accountInfo = accounts.get(pool.address);
-
-      if (accountInfo?.data) {
-        // Парсимо оновлений стан пулу з блокчейну
-        const updated = parsePoolAccount(
-          new PublicKey(pool.address),
-          accountInfo,
-          this.mintA,
-          this.mintB,
-        );
-
-        if (updated) {
-          updatedPools.push(updated);
-          updatedCount++;
-        } else {
-          // Пул більше не валідний — прибираємо
-          logger.debug('Pool account became invalid, removing', { address: pool.address.slice(0, 8) });
-        }
-      } else {
-        // Акаунт не повернувся — зберігаємо старі дані
-        updatedPools.push(pool);
+      const accountInfo = poolAccounts.get(pool.address);
+      if (!accountInfo) {
+        logger.debug('Pool account not found', { address: pool.address.slice(0, 8) });
+        continue;
       }
+
+      const state = decodePoolState(new PublicKey(pool.address), accountInfo);
+      if (!state || !isSwapEnabled(state)) continue;
+
+      decodedPools.push({ address: pool.address, state });
+    }
+
+    if (decodedPools.length === 0) {
+      logger.warn('All pools disappeared, re-discovering...');
+      await this.discoverPools();
+      return;
+    }
+
+    // Batch запит: vault баланси + ammConfig fee
+    const vaultAndConfigAddresses = decodedPools.flatMap(({ state }) => [
+      state.token0Vault,
+      state.token1Vault,
+      state.ammConfig,
+    ]);
+
+    const accountsMap = await this.rpcClient.getMultipleAccounts(vaultAndConfigAddresses);
+
+    // Збираємо оновлені RawPool
+    const updatedPools: RawPool[] = [];
+
+    for (const { address, state } of decodedPools) {
+      const vault0Info = accountsMap.get(state.token0Vault.toString());
+      const vault1Info = accountsMap.get(state.token1Vault.toString());
+      const configInfo = accountsMap.get(state.ammConfig.toString());
+
+      if (!vault0Info || !vault1Info) continue;
+
+      const reserve0 = readVaultBalance(vault0Info);
+      const reserve1 = readVaultBalance(vault1Info);
+
+      if (reserve0 === null || reserve1 === null) continue;
+
+      const feeBps = configInfo ? parseAmmConfigFee(configInfo) : 25;
+
+      const pool = buildRawPool(
+        address,
+        state,
+        reserve0,
+        reserve1,
+        feeBps,
+        this.mintA,
+        this.mintB,
+      );
+
+      if (pool) updatedPools.push(pool);
     }
 
     this.rawPools = updatedPools;
@@ -304,14 +328,7 @@ export class ArbitrageOrchestrator {
 
     logger.debug('Pool data refreshed', {
       total: this.rawPools.length,
-      updated: updatedCount,
     });
-
-    // Якщо всі пули зникли — запускаємо re-discovery
-    if (this.rawPools.length === 0) {
-      logger.warn('All pools disappeared, re-discovering...');
-      await this.discoverPools();
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -322,12 +339,8 @@ export class ArbitrageOrchestrator {
     this.state.lastError = error.message;
     logError(error, 'updateCycle');
 
-    // При RPC помилці — скидаємо пули для re-discovery на наступному циклі
-    if (
-      error.message.includes('RPC call failed') ||
-      error.message.includes('failed to fetch')
-    ) {
-      logger.warn('RPC error detected, will re-discover pools on next cycle');
+    if (error.message.includes('RPC call failed')) {
+      logger.warn('RPC error — will re-discover pools on next cycle');
       this.rawPools = [];
     }
   }
@@ -349,10 +362,6 @@ export class ArbitrageOrchestrator {
 // Фабрична функція
 // ---------------------------------------------------------------------------
 
-/**
- * Створення та запуск оркестратора.
- * Реєструє обробники SIGINT/SIGTERM для graceful shutdown.
- */
 export async function startMonitor(
   config: OrchestratorConfig,
 ): Promise<ArbitrageOrchestrator> {

@@ -6,7 +6,6 @@
  * - Retry з експоненційним backoff
  * - Rate limiting між запитами
  * - Chunking для getMultipleAccounts (ліміт 100 акаунтів за запит)
- * - Читання балансу SPL Token vault акаунтів
  */
 
 import {
@@ -16,13 +15,11 @@ import {
   AccountInfo,
   Commitment,
 } from '@solana/web3.js';
-import { Buffer } from 'node:buffer';
 import { logger, logRpcCall } from '../logger/logger';
 import {
   RPC_RETRY_ATTEMPTS,
   RPC_RETRY_DELAY_MS,
   MAX_ACCOUNTS_PER_RPC_CALL,
-  SPL_TOKEN_AMOUNT_OFFSET,
 } from './constants';
 
 // ---------------------------------------------------------------------------
@@ -50,28 +47,26 @@ export class SolanaRpcClient {
     this.rpcUrl = rpcUrl;
     this.connection = new Connection(rpcUrl, {
       commitment,
-      disableRetryOnRateLimit: true, // Retry робимо самі
+      disableRetryOnRateLimit: true,
     });
     logger.debug('RPC Client initialized', { rpcUrl, commitment });
+  }
+
+  getRpcUrl(): string {
+    return this.rpcUrl;
   }
 
   // ---------------------------------------------------------------------------
   // Публічні методи
   // ---------------------------------------------------------------------------
 
-  getRpcUrl(): string {
-    return this.rpcUrl;
-  }
-
-  /**
-   * Отримання програмних акаунтів з фільтрами.
-   */
   async getProgramAccounts(
     programId: PublicKey,
     filters: GetProgramAccountsFilter[],
     options?: RpcOptions,
   ): Promise<{ publicKey: PublicKey; account: AccountInfo<Buffer> }[]> {
     const start = Date.now();
+
     const result = await this.withRetry(
       () =>
         this.connection.getProgramAccounts(programId, {
@@ -84,7 +79,7 @@ export class SolanaRpcClient {
     );
 
     logRpcCall('getProgramAccounts', Date.now() - start, true);
-    logger.debug('getProgramAccounts completed', {
+    logger.debug('getProgramAccounts', {
       programId: programId.toString().slice(0, 8),
       found: result.length,
     });
@@ -93,8 +88,8 @@ export class SolanaRpcClient {
   }
 
   /**
-   * Отримання інформації про множинні акаунти.
-   * Автоматично розбиває на chunks по MAX_ACCOUNTS_PER_RPC_CALL.
+   * Отримання множинних акаунтів.
+   * Приймає PublicKey[] — автоматично розбиває на chunks.
    */
   async getMultipleAccounts(
     publicKeys: PublicKey[],
@@ -103,9 +98,8 @@ export class SolanaRpcClient {
     if (publicKeys.length === 0) return new Map();
 
     const start = Date.now();
-
-    // Розбиваємо на chunks
     const chunks: PublicKey[][] = [];
+
     for (let i = 0; i < publicKeys.length; i += MAX_ACCOUNTS_PER_RPC_CALL) {
       chunks.push(publicKeys.slice(i, i + MAX_ACCOUNTS_PER_RPC_CALL));
     }
@@ -118,8 +112,7 @@ export class SolanaRpcClient {
               chunk,
               options?.commitment,
             );
-
-            const result = new Map<string, AccountInfo<Buffer> | null>();
+            const result: MultipleAccountsResult = new Map();
             chunk.forEach((key, i) => {
               result.set(key.toString(), accounts[i] ?? null);
             });
@@ -131,7 +124,6 @@ export class SolanaRpcClient {
       ),
     );
 
-    // Об'єднуємо результати
     const combined: MultipleAccountsResult = new Map();
     for (const chunk of chunkResults) {
       for (const [key, value] of chunk) {
@@ -143,9 +135,6 @@ export class SolanaRpcClient {
     return combined;
   }
 
-  /**
-   * Отримання одного акаунту.
-   */
   async getAccountInfo(
     publicKey: PublicKey,
     options?: RpcOptions,
@@ -154,48 +143,12 @@ export class SolanaRpcClient {
     return results.get(publicKey.toString()) ?? null;
   }
 
-  /**
-   * Читання балансу SPL Token акаунту (vault резерв).
-   *
-   * SPL Token account layout:
-   *   0..32  mint
-   *  32..64  owner
-   *  64..72  amount (u64, little-endian)  ← SPL_TOKEN_AMOUNT_OFFSET
-   *
-   * @returns баланс як bigint або null якщо акаунт не знайдено
-   */
-  async getTokenAccountBalance(vaultAddress: PublicKey): Promise<bigint | null> {
-    const accountInfo = await this.getAccountInfo(vaultAddress);
-
-    if (!accountInfo?.data) return null;
-
-    const data = accountInfo.data;
-    if (data.length < SPL_TOKEN_AMOUNT_OFFSET + 8) {
-      logger.warn('Token account data too small', {
-        address: vaultAddress.toString().slice(0, 8),
-        size: data.length,
-      });
-      return null;
-    }
-
-    return data.readBigUInt64LE(SPL_TOKEN_AMOUNT_OFFSET);
-  }
-
-  /**
-   * Читання decimals з SPL Mint акаунту.
-   * Mint layout: ... decimals знаходиться на офсеті 44.
-   */
   async getMintDecimals(mintAddress: PublicKey): Promise<number | null> {
     const accountInfo = await this.getAccountInfo(mintAddress);
-
     if (!accountInfo?.data || accountInfo.data.length < 45) return null;
-
     return accountInfo.data.readUInt8(44);
   }
 
-  /**
-   * Перевірка з'єднання з RPC.
-   */
   async healthCheck(): Promise<boolean> {
     try {
       const start = Date.now();
@@ -212,9 +165,6 @@ export class SolanaRpcClient {
   // Приватні хелпери
   // ---------------------------------------------------------------------------
 
-  /**
-   * Rate limiting — мінімальний інтервал між запитами.
-   */
   private async rateLimit(): Promise<void> {
     const elapsed = Date.now() - this.lastRequestTime;
     if (elapsed < this.minRequestIntervalMs) {
@@ -223,9 +173,6 @@ export class SolanaRpcClient {
     this.lastRequestTime = Date.now();
   }
 
-  /**
-   * Виконання запиту з retry та експоненційним backoff.
-   */
   private async withRetry<T>(
     operation: () => Promise<T>,
     context: string,
@@ -247,13 +194,13 @@ export class SolanaRpcClient {
           retryInMs: attempt < retries ? delay : null,
         });
 
-        if (attempt < retries) {
-          await sleep(delay);
-        }
+        if (attempt < retries) await sleep(delay);
       }
     }
 
-    throw new Error(`RPC call failed after ${retries} attempts [${context}]: ${lastError?.message}`);
+    throw new Error(
+      `RPC call failed after ${retries} attempts [${context}]: ${lastError?.message}`,
+    );
   }
 }
 
@@ -265,9 +212,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Фабрична функція.
- */
 export function createRpcClient(rpcUrl: string, commitment?: Commitment): SolanaRpcClient {
   return new SolanaRpcClient(rpcUrl, commitment);
 }

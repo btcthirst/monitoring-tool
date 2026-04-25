@@ -1,5 +1,5 @@
 {
-  "name": "raydium-arb-monitor",
+  "name": "monitoring-tool",
   "version": "1.0.0",
   "description": "Real-time arbitrage monitoring tool for Raydium CPMM pools",
   "license": "MIT",
@@ -12,14 +12,16 @@
     "build": "tsc",
     "build:watch": "tsc --watch",
     "start": "node dist/index.js",
-    "dev": "ts-node --esm src/index.ts",
+    "dev": "ts-node src/index.ts",
     "monitor": "ts-node src/index.ts monitor",
     "clean": "rm -rf dist",
     "lint": "eslint src --ext .ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@raydium-io/raydium-sdk-v2": "^0.2.41-alpha",
     "@solana/web3.js": "^1.95.4",
+    "bn.js": "^5.2.3",
     "chalk": "^4.1.2",
     "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
@@ -29,6 +31,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@types/bn.js": "^5.1.6",
     "@types/node": "^22.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",

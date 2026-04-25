@@ -1,121 +1,81 @@
 // solana/parsers.ts
 /**
- * Парсери для Raydium CPMM акаунтів.
+ * Парсери для Raydium CPMM акаунтів через Raydium SDK v2.
  *
- * Важливо:
- * - Резерви пулу — це баланси vault акаунтів (SPL Token accounts),
- *   а НЕ поля в PoolState. Тому parsePoolAccount приймає vault баланси
- *   окремими параметрами.
- * - Fee читається з amm_config акаунту кожного пулу.
- * - Всі офсети верифіковано по constants.ts.
+ * SDK надає типізовані layout декодери — не треба вручну читати офсети.
+ * CpmmPoolInfoLayout.decode() повертає повністю типізований об'єкт
+ * з усіма полями включаючи vault адреси та fee rate.
  */
 
-import { PublicKey, AccountInfo } from '@solana/web3.js';
+import { PublicKey, AccountInfo, Connection } from '@solana/web3.js';
+import { CpmmPoolInfoLayout, ApiV3PoolInfoStandardItemCpmm } from '@raydium-io/raydium-sdk-v2';
 import { RawPool } from '../core/types';
 import { logger } from '../logger/logger';
 import {
-  POOL_FIELD_OFFSETS,
-  AMM_CONFIG_OFFSETS,
-  FEE_RATE_DIVISOR,
-  POOL_STATUS_BITS,
-  DEFAULT_FEE_BPS,
   RAYDIUM_CPMM_PROGRAM_ID,
   CPMM_POOL_ACCOUNT_SIZE,
+  POOL_STATUS_BITS,
+  DEFAULT_FEE_BPS,
+  SPL_TOKEN_AMOUNT_OFFSET,
 } from './constants';
 
 // ---------------------------------------------------------------------------
 // Типи
 // ---------------------------------------------------------------------------
 
-export type ParsedPoolState = {
-  address: string;
-  ammConfig: PublicKey;
-  token0Mint: PublicKey;
-  token1Mint: PublicKey;
-  token0Vault: PublicKey;
-  token1Vault: PublicKey;
-  lpMint: PublicKey;
-  mint0Decimals: number;
-  mint1Decimals: number;
-  status: number;
-  isSwapEnabled: boolean;
-};
+/**
+ * Декодований стан пулу з SDK layout.
+ * Містить всі поля включаючи vault адреси.
+ */
+export type DecodedPoolState = ReturnType<typeof CpmmPoolInfoLayout.decode>;
 
 // ---------------------------------------------------------------------------
-// Хелпери
+// Парсинг PoolState через SDK
 // ---------------------------------------------------------------------------
 
-function readU64LE(buffer: Buffer, offset: number): bigint {
-  return buffer.readBigUInt64LE(offset);
-}
-
-function readPublicKey(buffer: Buffer, offset: number): PublicKey {
-  return new PublicKey(buffer.slice(offset, offset + 32));
-}
-
-// ---------------------------------------------------------------------------
-// Парсинг PoolState
-// ---------------------------------------------------------------------------
-
-export function parsePoolState(
+/**
+ * Декодування акаунту пулу через Raydium SDK layout.
+ * Повертає типізований об'єкт або null при помилці.
+ */
+export function decodePoolState(
   address: PublicKey,
   accountInfo: AccountInfo<Buffer>,
-): ParsedPoolState | null {
-  const data = accountInfo.data;
-
+): DecodedPoolState | null {
   if (!accountInfo.owner.equals(RAYDIUM_CPMM_PROGRAM_ID)) {
-    logger.debug('Account owner is not Raydium CPMM program', {
+    logger.debug('Not a Raydium CPMM account', {
       address: address.toString().slice(0, 8),
       owner: accountInfo.owner.toString().slice(0, 8),
     });
     return null;
   }
 
-  if (data.length < CPMM_POOL_ACCOUNT_SIZE) {
+  if (accountInfo.data.length < CPMM_POOL_ACCOUNT_SIZE) {
     logger.warn('Pool account data too small', {
       address: address.toString().slice(0, 8),
-      size: data.length,
-      expected: CPMM_POOL_ACCOUNT_SIZE,
+      size: accountInfo.data.length,
     });
     return null;
   }
 
   try {
-    const ammConfig = readPublicKey(data, POOL_FIELD_OFFSETS.AMM_CONFIG);
-    const token0Mint = readPublicKey(data, POOL_FIELD_OFFSETS.TOKEN_0_MINT);
-    const token1Mint = readPublicKey(data, POOL_FIELD_OFFSETS.TOKEN_1_MINT);
-    const lpMint = readPublicKey(data, POOL_FIELD_OFFSETS.LP_MINT);
-    const token0Vault = readPublicKey(data, POOL_FIELD_OFFSETS.TOKEN_0_VAULT);
-    const token1Vault = readPublicKey(data, POOL_FIELD_OFFSETS.TOKEN_1_VAULT);
+    // SDK декодує всі поля включаючи:
+    // - token0Mint, token1Mint
+    // - token0Vault, token1Vault
+    // - mintDecimal0, mintDecimal1
+    // - status
+    // - ammConfig (для fee rate)
+    const decoded = CpmmPoolInfoLayout.decode(accountInfo.data);
 
-    const status = data.readUInt8(POOL_FIELD_OFFSETS.STATUS);
-    const mint0Decimals = data.readUInt8(POOL_FIELD_OFFSETS.MINT_0_DECIMALS);
-    const mint1Decimals = data.readUInt8(POOL_FIELD_OFFSETS.MINT_1_DECIMALS);
-    const isSwapEnabled = (status & POOL_STATUS_BITS.SWAP_DISABLED) === 0;
-
-    logger.debug('Parsed pool state', {
+    logger.debug('Decoded pool state', {
       address: address.toString().slice(0, 8),
-      token0: token0Mint.toString().slice(0, 8),
-      token1: token1Mint.toString().slice(0, 8),
-      status,
-      isSwapEnabled,
+      token0: decoded.token0Mint.toString().slice(0, 8),
+      token1: decoded.token1Mint.toString().slice(0, 8),
+      status: decoded.status,
     });
 
-    return {
-      address: address.toString(),
-      ammConfig,
-      token0Mint,
-      token1Mint,
-      token0Vault,
-      token1Vault,
-      lpMint,
-      mint0Decimals,
-      mint1Decimals,
-      status,
-      isSwapEnabled,
-    };
+    return decoded;
   } catch (error) {
-    logger.error('Failed to parse pool state', {
+    logger.error('Failed to decode pool state via SDK', {
       address: address.toString().slice(0, 8),
       error: error instanceof Error ? error.message : String(error),
     });
@@ -124,24 +84,29 @@ export function parsePoolState(
 }
 
 // ---------------------------------------------------------------------------
-// Парсинг AmmConfig (fee rate)
+// Перевірка активності пулу
 // ---------------------------------------------------------------------------
 
-export function parseAmmConfigFee(accountInfo: AccountInfo<Buffer>): number {
-  const data = accountInfo.data;
+export function isSwapEnabled(decoded: DecodedPoolState): boolean {
+  return (decoded.status & POOL_STATUS_BITS.SWAP_DISABLED) === 0;
+}
 
-  if (data.length < AMM_CONFIG_OFFSETS.TRADE_FEE_RATE + 8) {
-    logger.warn('AmmConfig account too small, using default fee');
-    return DEFAULT_FEE_BPS;
+// ---------------------------------------------------------------------------
+// Читання балансу vault (SPL Token account)
+// ---------------------------------------------------------------------------
+
+/**
+ * Читання балансу SPL Token vault акаунту.
+ * SPL Token amount знаходиться на офсеті 64 (після mint + owner).
+ */
+export function readVaultBalance(accountInfo: AccountInfo<Buffer>): bigint | null {
+  if (accountInfo.data.length < SPL_TOKEN_AMOUNT_OFFSET + 8) {
+    return null;
   }
-
   try {
-    const feeRate = readU64LE(data, AMM_CONFIG_OFFSETS.TRADE_FEE_RATE);
-    const feeBps = Number(feeRate / (FEE_RATE_DIVISOR / 10_000n));
-    return feeBps > 0 ? feeBps : DEFAULT_FEE_BPS;
+    return accountInfo.data.readBigUInt64LE(SPL_TOKEN_AMOUNT_OFFSET);
   } catch {
-    logger.warn('Failed to parse AmmConfig fee, using default');
-    return DEFAULT_FEE_BPS;
+    return null;
   }
 }
 
@@ -149,19 +114,30 @@ export function parseAmmConfigFee(accountInfo: AccountInfo<Buffer>): number {
 // Збірка RawPool
 // ---------------------------------------------------------------------------
 
+/**
+ * Збірка RawPool з декодованого PoolState + vault балансів.
+ *
+ * @param address      — адреса пулу
+ * @param decoded      — декодований PoolState (через SDK)
+ * @param reserve0     — баланс token0Vault
+ * @param reserve1     — баланс token1Vault
+ * @param feeBps       — fee в basis points (з AmmConfig або дефолт)
+ * @param expectedMintA — фільтр пари
+ * @param expectedMintB — фільтр пари
+ */
 export function buildRawPool(
-  poolState: ParsedPoolState,
+  address: string,
+  decoded: DecodedPoolState,
   reserve0: bigint,
   reserve1: bigint,
   feeBps: number,
   expectedMintA: string,
   expectedMintB: string,
 ): RawPool | null {
-  const token0Str = poolState.token0Mint.toString();
-  const token1Str = poolState.token1Mint.toString();
+  const token0Str = decoded.token0Mint.toString();
+  const token1Str = decoded.token1Mint.toString();
 
-  // Використовуємо явні змінні замість destructuring щоб уникнути
-  // 'possibly undefined' з noUncheckedIndexedAccess
+  // Верифікація пари токенів
   const sortedExpected = [expectedMintA, expectedMintB].sort();
   const sortedActual = [token0Str, token1Str].sort();
 
@@ -171,8 +147,8 @@ export function buildRawPool(
   const tok1 = sortedActual[1] ?? '';
 
   if (tok0 !== expA || tok1 !== expB) {
-    logger.debug('Pool does not match expected token pair', {
-      address: poolState.address.slice(0, 8),
+    logger.debug('Pool token pair mismatch', {
+      address: address.slice(0, 8),
       expected: `${expA.slice(0, 8)}/${expB.slice(0, 8)}`,
       actual: `${tok0.slice(0, 8)}/${tok1.slice(0, 8)}`,
     });
@@ -180,48 +156,43 @@ export function buildRawPool(
   }
 
   if (reserve0 === 0n || reserve1 === 0n) {
-    logger.debug('Pool has zero reserve, skipping', {
-      address: poolState.address.slice(0, 8),
-      reserve0: reserve0.toString(),
-      reserve1: reserve1.toString(),
-    });
+    logger.debug('Pool has zero reserve, skipping', { address: address.slice(0, 8) });
     return null;
   }
 
   return {
-    address: poolState.address,
+    address,
     tokenA: token0Str,
     tokenB: token1Str,
     reserveA: reserve0,
     reserveB: reserve1,
-    decimalsA: poolState.mint0Decimals,
-    decimalsB: poolState.mint1Decimals,
+    decimalsA: decoded.mintDecimal0,
+    decimalsB: decoded.mintDecimal1,
     feeBps,
   };
 }
 
 // ---------------------------------------------------------------------------
-// Зворотна сумісність для orchestrator (refreshPoolData)
+// Парсинг AmmConfig fee через SDK
 // ---------------------------------------------------------------------------
 
-export function parsePoolAccount(
-  address: PublicKey,
-  accountInfo: AccountInfo<Buffer>,
-  expectedMintA: string,
-  expectedMintB: string,
-  reserve0: bigint,
-  reserve1: bigint,
-  feeBps: number = DEFAULT_FEE_BPS,
-): RawPool | null {
-  const poolState = parsePoolState(address, accountInfo);
-  if (!poolState) return null;
-
-  if (!poolState.isSwapEnabled) {
-    logger.debug('Swap disabled for pool', { address: address.toString().slice(0, 8) });
-    return null;
+/**
+ * Читання trade fee rate з AmmConfig акаунту.
+ * SDK зберігає tradeFeeRate як BN в одиницях 1e-6.
+ * 2500 → 0.25% → 25 bps
+ */
+export function parseAmmConfigFee(accountInfo: AccountInfo<Buffer>): number {
+  try {
+    // AmmConfig layout: discriminator(8) + bump(1) + ... + tradeFeeRate(u64 @ offset 12)
+    if (accountInfo.data.length < 20) return DEFAULT_FEE_BPS;
+    const feeRateRaw = accountInfo.data.readBigUInt64LE(12);
+    // feeRate одиниці: 1e-6, конвертуємо в bps (1e-4)
+    // bps = feeRate / 1_000_000 * 10_000 = feeRate / 100
+    const feeBps = Number(feeRateRaw / 100n);
+    return feeBps > 0 ? feeBps : DEFAULT_FEE_BPS;
+  } catch {
+    return DEFAULT_FEE_BPS;
   }
-
-  return buildRawPool(poolState, reserve0, reserve1, feeBps, expectedMintA, expectedMintB);
 }
 
 // ---------------------------------------------------------------------------

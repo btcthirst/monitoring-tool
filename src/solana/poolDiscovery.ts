@@ -1,33 +1,39 @@
 // solana/poolDiscovery.ts
 /**
- * Пошук та завантаження Raydium CPMM пулів для заданої пари токенів.
+ * Пошук та завантаження Raydium CPMM пулів через SDK v2.
  *
  * Процес discovery (3 етапи):
- *
- * 1. getProgramAccounts з memcmp фільтрами → список адрес пулів
- * 2. getMultipleAccounts для vault адрес кожного пулу → резерви
- * 3. getMultipleAccounts для amm_config адрес → реальні fee rates
- *
- * Кешування: результати discovery кешуються на CACHE_TTL_MS.
- * При refresh (updateCycle) кеш не використовується.
+ * 1. getProgramAccounts з dataSize + memcmp фільтрами → акаунти пулів
+ * 2. SDK декодує PoolState → отримуємо vault адреси та ammConfig
+ * 3. getMultipleAccounts для vaults → резерви; для ammConfigs → fee rates
  */
 
 import { PublicKey, GetProgramAccountsFilter } from '@solana/web3.js';
+import { CpmmPoolInfoLayout } from '@raydium-io/raydium-sdk-v2';
 import { SolanaRpcClient } from './client';
 import { RawPool } from '../core/types';
 import { logger } from '../logger/logger';
 import {
   RAYDIUM_CPMM_PROGRAM_ID,
   CPMM_POOL_ACCOUNT_SIZE,
-  POOL_FIELD_OFFSETS,
 } from './constants';
-import { parsePoolState, parseAmmConfigFee, buildRawPool } from './parsers';
+import {
+  decodePoolState,
+  isSwapEnabled,
+  readVaultBalance,
+  buildRawPool,
+  parseAmmConfigFee,
+} from './parsers';
 
 // ---------------------------------------------------------------------------
 // Константи
 // ---------------------------------------------------------------------------
 
-const CACHE_TTL_MS = 30_000; // 30 секунд
+const CACHE_TTL_MS = 30_000;
+
+// Офсети для memcmp фільтрів — беремо з SDK layout
+const TOKEN_0_MINT_OFFSET = CpmmPoolInfoLayout.offsetOf('token0Mint');
+const TOKEN_1_MINT_OFFSET = CpmmPoolInfoLayout.offsetOf('token1Mint');
 
 // ---------------------------------------------------------------------------
 // Кеш
@@ -46,14 +52,12 @@ export function clearPoolCache(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Побудова фільтрів
+// Фільтри
 // ---------------------------------------------------------------------------
 
 /**
- * Побудова memcmp фільтрів для getProgramAccounts.
- *
- * Raydium CPMM зберігає токени відсортовано (token_0 < token_1 лексично),
- * тому сортуємо і ми перед побудовою фільтрів.
+ * Побудова фільтрів для getProgramAccounts.
+ * Офсети беруться з SDK layout — не хардкодимо вручну.
  */
 export function buildPoolFilters(mintA: string, mintB: string): GetProgramAccountsFilter[] {
   const sorted = [mintA, mintB].sort();
@@ -62,18 +66,8 @@ export function buildPoolFilters(mintA: string, mintB: string): GetProgramAccoun
 
   return [
     { dataSize: CPMM_POOL_ACCOUNT_SIZE },
-    {
-      memcmp: {
-        offset: POOL_FIELD_OFFSETS.TOKEN_0_MINT,
-        bytes: sorted0,
-      },
-    },
-    {
-      memcmp: {
-        offset: POOL_FIELD_OFFSETS.TOKEN_1_MINT,
-        bytes: sorted1,
-      },
-    },
+    { memcmp: { offset: TOKEN_0_MINT_OFFSET, bytes: sorted0 } },
+    { memcmp: { offset: TOKEN_1_MINT_OFFSET, bytes: sorted1 } },
   ];
 }
 
@@ -83,11 +77,6 @@ export function buildPoolFilters(mintA: string, mintB: string): GetProgramAccoun
 
 /**
  * Знаходження всіх активних CPMM пулів для пари токенів.
- *
- * @param rpcClient — RPC клієнт
- * @param mintA     — mint address першого токена
- * @param mintB     — mint address другого токена
- * @param useCache  — використовувати кеш (default: true)
  */
 export async function findPoolsForPair(
   rpcClient: SolanaRpcClient,
@@ -97,7 +86,6 @@ export async function findPoolsForPair(
 ): Promise<RawPool[]> {
   const cacheKey = [mintA, mintB].sort().join(':');
 
-  // Перевірка кешу
   if (useCache) {
     const cached = poolCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
@@ -109,97 +97,89 @@ export async function findPoolsForPair(
     }
   }
 
-  logger.info('Discovering CPMM pools', { mintA, mintB });
+  logger.info('Discovering CPMM pools via SDK', { mintA, mintB });
   const startTime = Date.now();
 
-  // ─── Етап 1: пошук адрес пулів ───────────────────────────────────────────
+  // ─── Етап 1: getProgramAccounts ───────────────────────────────────────────
 
   const filters = buildPoolFilters(mintA, mintB);
-  const rawAccounts = await rpcClient.getProgramAccounts(
-    RAYDIUM_CPMM_PROGRAM_ID,
-    filters,
-  );
+  const rawAccounts = await rpcClient.getProgramAccounts(RAYDIUM_CPMM_PROGRAM_ID, filters);
 
   if (rawAccounts.length === 0) {
-    logger.warn('No CPMM pools found for token pair', { mintA, mintB });
+    logger.warn('No CPMM pools found', { mintA, mintB });
     return [];
   }
 
-  logger.debug('Raw pool accounts fetched', { count: rawAccounts.length });
+  logger.debug('Raw accounts fetched', { count: rawAccounts.length });
 
-  // ─── Парсинг PoolState (без резервів) ────────────────────────────────────
+  // ─── Етап 2: SDK декодування PoolState ────────────────────────────────────
 
-  const poolStates = rawAccounts
-    .map(({ publicKey, account }) => parsePoolState(publicKey, account))
-    .filter((s): s is NonNullable<typeof s> => s !== null)
-    .filter((s) => s.isSwapEnabled);
+  const decoded = rawAccounts
+    .map(({ publicKey, account }) => {
+      const state = decodePoolState(publicKey, account);
+      if (!state) return null;
+      if (!isSwapEnabled(state)) {
+        logger.debug('Swap disabled, skipping pool', { address: publicKey.toString().slice(0, 8) });
+        return null;
+      }
+      return { address: publicKey, state };
+    })
+    .filter((x): x is NonNullable<typeof x> => x !== null);
 
-  if (poolStates.length === 0) {
-    logger.warn('All pool accounts failed to parse or swap is disabled');
+  if (decoded.length === 0) {
+    logger.warn('All pool accounts failed to decode or swap is disabled');
     return [];
   }
 
-  logger.debug('Pool states parsed', {
-    total: rawAccounts.length,
-    valid: poolStates.length,
-  });
+  // ─── Етап 3: Vault баланси + AmmConfig fee ────────────────────────────────
 
-  // ─── Етап 2: читання vault балансів ──────────────────────────────────────
+  // Збираємо всі vault + ammConfig адреси одним batch запитом
+  const vaultAndConfigAddresses = decoded.flatMap(({ state }) => [
+    state.token0Vault,
+    state.token1Vault,
+    state.ammConfig,
+  ]);
 
-  // Збираємо всі vault адреси (по 2 на пул)
-  const vaultAddresses = poolStates.flatMap((s) => [s.token0Vault, s.token1Vault]);
-  const vaultAccounts = await rpcClient.getMultipleAccounts(vaultAddresses);
-
-  // ─── Етап 3: читання amm_config (fee rates) ──────────────────────────────
-
-  // Унікальні amm_config адреси (кілька пулів можуть мати однакову конфігурацію)
-  const uniqueConfigs = [...new Set(poolStates.map((s) => s.ammConfig.toString()))];
-  const configAddresses = uniqueConfigs.map((a) => new PublicKey(a));
-  const configAccounts = await rpcClient.getMultipleAccounts(configAddresses);
-
-  // Будуємо мапу config → feeBps
-  const feeByConfig = new Map<string, number>();
-  for (const configAddr of uniqueConfigs) {
-    const accountInfo = configAccounts.get(configAddr);
-    const feeBps = accountInfo ? parseAmmConfigFee(accountInfo) : 25; // default 0.25%
-    feeByConfig.set(configAddr, feeBps);
-  }
+  const accountsMap = await rpcClient.getMultipleAccounts(vaultAndConfigAddresses);
 
   // ─── Збірка RawPool ───────────────────────────────────────────────────────
 
   const pools: RawPool[] = [];
 
-  for (const poolState of poolStates) {
-    const vault0Info = vaultAccounts.get(poolState.token0Vault.toString());
-    const vault1Info = vaultAccounts.get(poolState.token1Vault.toString());
+  for (const { address, state } of decoded) {
+    const vault0Info = accountsMap.get(state.token0Vault.toString());
+    const vault1Info = accountsMap.get(state.token1Vault.toString());
+    const configInfo = accountsMap.get(state.ammConfig.toString());
 
-    if (!vault0Info?.data || !vault1Info?.data) {
-      logger.debug('Vault account missing for pool', {
-        address: poolState.address.slice(0, 8),
-      });
+    if (!vault0Info || !vault1Info) {
+      logger.debug('Vault account missing', { address: address.toString().slice(0, 8) });
       continue;
     }
 
-    // Читаємо баланси vault акаунтів через client
-    const reserve0 = await rpcClient.getTokenAccountBalance(poolState.token0Vault);
-    const reserve1 = await rpcClient.getTokenAccountBalance(poolState.token1Vault);
+    const reserve0 = readVaultBalance(vault0Info);
+    const reserve1 = readVaultBalance(vault1Info);
 
     if (reserve0 === null || reserve1 === null) {
-      logger.debug('Could not read vault balance', {
-        address: poolState.address.slice(0, 8),
-      });
+      logger.debug('Failed to read vault balance', { address: address.toString().slice(0, 8) });
       continue;
     }
 
-    const feeBps = feeByConfig.get(poolState.ammConfig.toString()) ?? 25;
+    const feeBps = configInfo ? parseAmmConfigFee(configInfo) : 25;
 
-    const pool = buildRawPool(poolState, reserve0, reserve1, feeBps, mintA, mintB);
-    if (pool) {
-      pools.push(pool);
-    }
+    const pool = buildRawPool(
+      address.toString(),
+      state,
+      reserve0,
+      reserve1,
+      feeBps,
+      mintA,
+      mintB,
+    );
+
+    if (pool) pools.push(pool);
   }
 
-  // ─── Кешування та логування ───────────────────────────────────────────────
+  // ─── Кешування ───────────────────────────────────────────────────────────
 
   if (useCache && pools.length > 0) {
     poolCache.set(cacheKey, { pools, timestamp: Date.now() });
@@ -215,21 +195,18 @@ export async function findPoolsForPair(
 }
 
 // ---------------------------------------------------------------------------
-// Перевірка активності одного пулу
+// Перевірка активності пулу
 // ---------------------------------------------------------------------------
 
-/**
- * Перевірка чи пул активний (swap не вимкнено).
- */
 export async function isPoolActive(
   rpcClient: SolanaRpcClient,
   poolAddress: PublicKey,
 ): Promise<boolean> {
   const accountInfo = await rpcClient.getAccountInfo(poolAddress);
-  if (!accountInfo?.data || accountInfo.data.length < POOL_FIELD_OFFSETS.STATUS + 1) {
-    return false;
-  }
+  if (!accountInfo) return false;
 
-  const status = accountInfo.data.readUInt8(POOL_FIELD_OFFSETS.STATUS);
-  return (status & 4) === 0; // SWAP_DISABLED bit
+  const decoded = decodePoolState(poolAddress, accountInfo);
+  if (!decoded) return false;
+
+  return isSwapEnabled(decoded);
 }
