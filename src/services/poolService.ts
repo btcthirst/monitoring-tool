@@ -1,11 +1,11 @@
 // services/poolService.ts
 /**
- * Glue layer між solana/ та core/.
+ * Glue layer between solana/ and core/.
  *
- * Відповідальність:
- * - Об'єднує RPC клієнт + pool discovery в один зручний сервіс
- * - Надає методи для orchestrator без прямих залежностей на solana/
- * - Кешування на рівні сервісу (делегує до poolDiscovery)
+ * Responsibilities:
+ * - Unifies RPC client + pool discovery into a single convenient service
+ * - Provides methods for the orchestrator without direct dependencies on solana/
+ * - Service-level caching (delegated to poolDiscovery)
  */
 
 import { SolanaRpcClient } from '../solana/client';
@@ -21,8 +21,8 @@ export class PoolService {
   }
 
   /**
-   * Пошук пулів для пари токенів.
-   * При першому виклику — повний discovery з кешуванням.
+   * Search for pools for a token pair.
+   * On first call — full discovery with caching.
    */
   async discoverPools(mintA: string, mintB: string): Promise<RawPool[]> {
     logger.debug('PoolService.discoverPools', { mintA, mintB });
@@ -30,8 +30,8 @@ export class PoolService {
   }
 
   /**
-   * Примусове оновлення пулів (без кешу).
-   * Використовується при re-discovery після помилки.
+   * Force refresh pools (without cache).
+   * Used during re-discovery after an error.
    */
   async refreshPools(mintA: string, mintB: string): Promise<RawPool[]> {
     logger.debug('PoolService.refreshPools (no cache)', { mintA, mintB });
@@ -39,7 +39,7 @@ export class PoolService {
   }
 
   /**
-   * Очищення кешу пулів.
+   * Clear pool cache.
    */
   clearCache(): void {
     clearPoolCache();

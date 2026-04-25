@@ -1,23 +1,23 @@
 // core/pricing.ts
 /**
- * Чиста математика для CPMM (Constant Product Market Maker).
+ * Pure math for CPMM (Constant Product Market Maker).
  *
- * Правила модуля:
- * - Жодних side effects, жодних залежностей від Solana/RPC/logger
- * - Всі функції — чисті (pure)
- * - bigint для сирих даних з блокчейну, number для розрахунків
+ * Module rules:
+ * - No side effects, no dependencies on Solana/RPC/logger
+ * - All functions are pure
+ * - bigint for raw blockchain data, number for calculations
  */
 
 import { RawPool, NormalizedPool, ValidationResult } from './types';
 
 // ---------------------------------------------------------------------------
-// Конвертація між bigint та number
+// Conversion between bigint and number
 // ---------------------------------------------------------------------------
 
 /**
- * Нормалізація суми з bigint в number з урахуванням decimals.
+ * Normalize amount from bigint to number considering decimals.
  *
- * @throws {Error} якщо ціла частина перевищує MAX_SAFE_INTEGER
+ * @throws {Error} if the integer part exceeds MAX_SAFE_INTEGER
  */
 export function normalizeAmount(amount: bigint, decimals: number): number {
   const divisor = BigInt(10 ** decimals);
@@ -34,9 +34,9 @@ export function normalizeAmount(amount: bigint, decimals: number): number {
 }
 
 /**
- * Конвертація number назад у bigint з урахуванням decimals.
+ * Convert number back to bigint considering decimals.
  *
- * @throws {Error} якщо перетворення втрачає точність
+ * @throws {Error} if conversion loses precision
  */
 export function denormalizeAmount(amount: number, decimals: number): bigint {
   const amountStr = amount.toFixed(decimals);
@@ -51,11 +51,11 @@ export function denormalizeAmount(amount: number, decimals: number): bigint {
 }
 
 // ---------------------------------------------------------------------------
-// Валідація
+// Validation
 // ---------------------------------------------------------------------------
 
 /**
- * Перевірка резервів пулу перед розрахунками.
+ * Check pool reserves before calculations.
  */
 export function validateReserves(reserveA: bigint, reserveB: bigint): ValidationResult {
   if (reserveA === 0n) {
@@ -68,8 +68,8 @@ export function validateReserves(reserveA: bigint, reserveB: bigint): Validation
 }
 
 /**
- * Перевірка розміру угоди відносно ліквідності пулу.
- * За замовчуванням угода не повинна перевищувати 10% резерву.
+ * Check trade size relative to pool liquidity.
+ * By default, trade should not exceed 10% of the reserve.
  */
 export function validateTradeSize(
   pool: NormalizedPool,
@@ -90,12 +90,12 @@ export function validateTradeSize(
 }
 
 // ---------------------------------------------------------------------------
-// Нормалізація пулу
+// Pool Normalization
 // ---------------------------------------------------------------------------
 
 /**
- * Перетворення RawPool → NormalizedPool.
- * Конвертує bigint резерви в number та fee з bps у десятковий дріб.
+ * Convert RawPool to NormalizedPool.
+ * Converts bigint reserves to number and fee from bps to decimal.
  */
 export function normalizePool(raw: RawPool): NormalizedPool {
   return {
@@ -111,12 +111,12 @@ export function normalizePool(raw: RawPool): NormalizedPool {
 }
 
 // ---------------------------------------------------------------------------
-// Ціноутворення
+// Pricing
 // ---------------------------------------------------------------------------
 
 /**
- * Spot price: скільки tokenB дає один tokenA (без впливу на ціну).
- * Повертає 0 якщо резерв A нульовий.
+ * Spot price: how much tokenB one tokenA gives (without price impact).
+ * Returns 0 if reserve A is zero.
  */
 export function getSpotPrice(pool: NormalizedPool): number {
   if (pool.reserveA === 0) return 0;
@@ -124,19 +124,19 @@ export function getSpotPrice(pool: NormalizedPool): number {
 }
 
 // ---------------------------------------------------------------------------
-// CPMM формула свапу
+// CPMM Swap Formula
 // ---------------------------------------------------------------------------
 
 /**
- * Розрахунок вихідної суми за формулою CPMM:
+ * Calculate output amount using CPMM formula:
  *
- *   amountOut = (amountIn × (1 − fee) × reserveOut)
- *             / (reserveIn + amountIn × (1 − fee))
+ *   amountOut = (amountIn * (1 - fee) * reserveOut)
+ *             / (reserveIn + amountIn * (1 - fee))
  *
- * Повертає 0 при невалідних вхідних даних замість виключення —
- * caller (arbitrage.ts) вирішує що робити з нульовим результатом.
+ * Returns 0 on invalid input instead of throwing —
+ * caller (arbitrage.ts) decides what to do with zero result.
  *
- * @throws {Error} тільки при невалідному fee (програмна помилка)
+ * @throws {Error} only on invalid fee (programming error)
  */
 export function getAmountOut(
   amountIn: number,
@@ -160,33 +160,33 @@ export function getAmountOut(
 }
 
 /**
- * Симуляція свапу A → B в межах одного пулу.
+ * Simulate swap A -> B within one pool.
  */
 export function simulateSwapAtoB(pool: NormalizedPool, amountIn: number): number {
   return getAmountOut(amountIn, pool.reserveA, pool.reserveB, pool.fee);
 }
 
 /**
- * Симуляція свапу B → A в межах одного пулу.
+ * Simulate swap B -> A within one pool.
  */
 export function simulateSwapBtoA(pool: NormalizedPool, amountIn: number): number {
   return getAmountOut(amountIn, pool.reserveB, pool.reserveA, pool.fee);
 }
 
 // ---------------------------------------------------------------------------
-// Двох-hop арбітраж
+// Two-hop Arbitrage
 // ---------------------------------------------------------------------------
 
 /**
- * Симуляція арбітражу через два пули: A → B (buyPool) → A (sellPool).
+ * Simulate arbitrage across two pools: A -> B (buyPool) -> A (sellPool).
  *
- * Slippage розраховується як відносне відхилення від spot price:
- *   slippage = (actualOut − expectedOut) / expectedOut
- * Від'ємне значення означає що отримали менше за spot (нормальна ситуація).
+ * Slippage is calculated as relative deviation from spot price:
+ *   slippage = (actualOut - expectedOut) / expectedOut
+ * Negative value means received less than spot (normal situation).
  *
- * @returns amountOut — сума A після обох свапів
- * @returns slippageBuy — відносне відхилення на першому свапі
- * @returns slippageSell — відносне відхилення на другому свапі
+ * @returns amountOut — amount of A after both swaps
+ * @returns slippageBuy — relative deviation on the first swap
+ * @returns slippageSell — relative deviation on the second swap
  */
 export function simulateTwoHopArbitrage(
   buyPool: NormalizedPool,
@@ -196,20 +196,20 @@ export function simulateTwoHopArbitrage(
   const spotBuy = getSpotPrice(buyPool);   // B per A
   const spotSell = getSpotPrice(sellPool); // B per A
 
-  // Hop 1: A → B через buyPool
+  // Hop 1: A -> B through buyPool
   const amountIntermediate = simulateSwapAtoB(buyPool, amountIn);
 
-  // Slippage на купівлі
+  // Slippage on buy
   const expectedIntermediate = spotBuy === 0 ? 0 : amountIn * spotBuy;
   const slippageBuy =
     expectedIntermediate === 0
       ? 0
       : (amountIntermediate - expectedIntermediate) / expectedIntermediate;
 
-  // Hop 2: B → A через sellPool
+  // Hop 2: B -> A through sellPool
   const amountOut = simulateSwapBtoA(sellPool, amountIntermediate);
 
-  // Slippage на продажу
+  // Slippage on sell
   const expectedOut = spotSell === 0 ? 0 : amountIntermediate / spotSell;
   const slippageSell =
     expectedOut === 0
@@ -220,28 +220,28 @@ export function simulateTwoHopArbitrage(
 }
 
 // ---------------------------------------------------------------------------
-// Розрахунок прибутку
+// Profit Calculation
 // ---------------------------------------------------------------------------
 
-/** Валовий прибуток = amountOut − amountIn */
+/** Gross profit = amountOut - amountIn */
 export function calculateGrossProfit(amountIn: number, amountOut: number): number {
   return amountOut - amountIn;
 }
 
-/** Чистий прибуток = grossProfit − txCost */
+/** Net profit = grossProfit - txCost */
 export function calculateNetProfit(grossProfit: number, txCost: number): number {
   return grossProfit - txCost;
 }
 
-/** Відсоток прибутку відносно вхідної суми */
+/** Profit percentage relative to input amount */
 export function calculateProfitPercent(profit: number, amountIn: number): number {
   if (amountIn === 0) return 0;
   return (profit / amountIn) * 100;
 }
 
 /**
- * Перевірка прибутковості угоди з урахуванням slippage.
- * Використовує maxSlippage як десятковий дріб (0.05 = 5%).
+ * Check profitability of the trade considering slippage.
+ * Uses maxSlippage as decimal (0.05 = 5%).
  */
 export function isProfitable(
   grossProfit: number,

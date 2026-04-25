@@ -1,12 +1,12 @@
 // core/orchestrator.ts
 /**
- * Головний оркестратор моніторингу арбітражних можливостей.
+ * Main orchestrator for monitoring arbitrage opportunities.
  *
- * Координує:
- * - Pool discovery через Raydium SDK
- * - Polling loop з оновленням резервів
- * - Пошук арбітражних можливостей
- * - Рендеринг результатів
+ * Coordinates:
+ * - Pool discovery via Raydium SDK
+ * - Polling loop with reserve updates
+ * - Search for arbitrage opportunities
+ * - Rendering results
  */
 
 import { PublicKey } from '@solana/web3.js';
@@ -21,7 +21,7 @@ import { PerformanceTimer, PeriodicExecutor } from '../utils/time';
 import { formatNumber } from '../utils/math';
 
 // ---------------------------------------------------------------------------
-// Типи
+// Types
 // ---------------------------------------------------------------------------
 
 export interface OrchestratorConfig {
@@ -47,7 +47,7 @@ interface MonitoringState {
 }
 
 // ---------------------------------------------------------------------------
-// Клас
+// Class
 // ---------------------------------------------------------------------------
 
 export class ArbitrageOrchestrator {
@@ -159,7 +159,7 @@ export class ArbitrageOrchestrator {
         this.rpcClient,
         this.mintA,
         this.mintB,
-        false, // без кешу при старті
+        false, // no cache on start
       );
 
       if (this.rawPools.length === 0) {
@@ -187,7 +187,7 @@ export class ArbitrageOrchestrator {
   }
 
   // ---------------------------------------------------------------------------
-  // Основний цикл
+  // Main cycle
   // ---------------------------------------------------------------------------
 
   private async updateCycle(): Promise<void> {
@@ -246,7 +246,7 @@ export class ArbitrageOrchestrator {
   }
 
   // ---------------------------------------------------------------------------
-  // Оновлення резервів через SDK
+  // SDK Reserve Updates
   // ---------------------------------------------------------------------------
 
   private async refreshPoolData(): Promise<void> {
@@ -255,14 +255,14 @@ export class ArbitrageOrchestrator {
       return;
     }
 
-    // Збираємо адреси пулів для отримання оновленого PoolState
+    // Gather pool addresses to fetch updated PoolState
     const poolAddresses = this.rawPools.map((p) => new PublicKey(p.address));
     const poolAccounts = await this.rpcClient.getMultipleAccounts(poolAddresses);
 
-    // Декодуємо оновлені PoolState → отримуємо vault адреси
+    // Decode updated PoolState -> get vault addresses
     const decodedPools: Array<{
       address: string;
-      state: ReturnType<typeof decodePoolState>;
+      state: NonNullable<ReturnType<typeof decodePoolState>>;
     }> = [];
 
     for (const pool of this.rawPools) {
@@ -284,22 +284,22 @@ export class ArbitrageOrchestrator {
       return;
     }
 
-    // Batch запит: vault баланси + ammConfig fee
+    // Batch request: vault balances + configId fee
     const vaultAndConfigAddresses = decodedPools.flatMap(({ state }) => [
-      state.token0Vault,
-      state.token1Vault,
-      state.ammConfig,
+      state.vaultA,
+      state.vaultB,
+      state.configId,
     ]);
 
     const accountsMap = await this.rpcClient.getMultipleAccounts(vaultAndConfigAddresses);
 
-    // Збираємо оновлені RawPool
+    // Assemble updated RawPools
     const updatedPools: RawPool[] = [];
 
     for (const { address, state } of decodedPools) {
-      const vault0Info = accountsMap.get(state.token0Vault.toString());
-      const vault1Info = accountsMap.get(state.token1Vault.toString());
-      const configInfo = accountsMap.get(state.ammConfig.toString());
+      const vault0Info = accountsMap.get(state.vaultA.toString());
+      const vault1Info = accountsMap.get(state.vaultB.toString());
+      const configInfo = accountsMap.get(state.configId.toString());
 
       if (!vault0Info || !vault1Info) continue;
 
@@ -332,7 +332,7 @@ export class ArbitrageOrchestrator {
   }
 
   // ---------------------------------------------------------------------------
-  // Обробка помилок
+  // Error handling
   // ---------------------------------------------------------------------------
 
   private handleUpdateError(error: Error): void {
@@ -346,7 +346,7 @@ export class ArbitrageOrchestrator {
   }
 
   // ---------------------------------------------------------------------------
-  // Публічний стан
+  // Public state
   // ---------------------------------------------------------------------------
 
   getState(): Readonly<MonitoringState> {
@@ -359,7 +359,7 @@ export class ArbitrageOrchestrator {
 }
 
 // ---------------------------------------------------------------------------
-// Фабрична функція
+// Factory function
 // ---------------------------------------------------------------------------
 
 export async function startMonitor(

@@ -1,43 +1,43 @@
 // utils/time.ts
 /**
- * Утиліти для роботи з часом, таймерами та polling.
+ * Utilities for working with time, timers, and polling.
  */
 
 // ---------------------------------------------------------------------------
-// Базові утиліти
+// Basic utilities
 // ---------------------------------------------------------------------------
 
 /**
- * Асинхронна затримка.
- * @example await sleep(1000); // 1 секунда
+ * Asynchronous delay.
+ * @example await sleep(1000); // 1 second
  */
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
- * Поточний Unix timestamp в секундах.
+ * Current Unix timestamp in seconds.
  */
 export function unixNow(): number {
   return Math.floor(Date.now() / 1000);
 }
 
 /**
- * Поточний час в ISO форматі.
+ * Current time in ISO format.
  */
 export function isoNow(): string {
   return new Date().toISOString();
 }
 
 // ---------------------------------------------------------------------------
-// Форматування
+// Formatting
 // ---------------------------------------------------------------------------
 
 /**
- * Форматування мілісекунд у читабельний рядок.
- * @example formatDuration(90061000) → '1d 1h 1m 1s'
- * @example formatDuration(1500)     → '1s'
- * @example formatDuration(500)      → '0s'
+ * Format milliseconds into a readable string.
+ * @example formatDuration(90061000) -> '1d 1h 1m 1s'
+ * @example formatDuration(1500)     -> '1s'
+ * @example formatDuration(500)      -> '0s'
  */
 export function formatDuration(ms: number): string {
   if (ms < 0) return `-${formatDuration(-ms)}`;
@@ -57,7 +57,7 @@ export function formatDuration(ms: number): string {
 }
 
 /**
- * Форматування таймстемпу.
+ * Format timestamp.
  */
 export function formatTimestamp(
   timestamp: number,
@@ -76,11 +76,11 @@ export function formatTimestamp(
 // ---------------------------------------------------------------------------
 
 /**
- * Простий таймер для вимірювання тривалості операцій.
+ * Simple timer for measuring operation duration.
  *
  * @example
  * const timer = new PerformanceTimer('PoolDiscovery');
- * // ... операція ...
+ * // ... operation ...
  * const { elapsedMs, elapsedFormatted } = timer.stop();
  */
 export class PerformanceTimer {
@@ -103,8 +103,8 @@ export class PerformanceTimer {
   }
 
   reset(): void {
-    // TypeScript не дозволяє перепризначити readonly — замість цього
-    // створи новий PerformanceTimer якщо потрібен reset
+    // TypeScript does not allow reassigning readonly — instead
+    // create a new PerformanceTimer if a reset is needed
   }
 }
 
@@ -113,7 +113,7 @@ export class PerformanceTimer {
 // ---------------------------------------------------------------------------
 
 /**
- * Збирач статистики по кількох операціях.
+ * Statistics collector for multiple operations.
  *
  * @example
  * const tracker = new TimeTracker();
@@ -178,10 +178,10 @@ export class TimeTracker {
 // ---------------------------------------------------------------------------
 
 /**
- * Polling loop з автоматичним управлінням.
+ * Polling loop with automatic management.
  *
- * Використовує while-loop замість setInterval — гарантує що наступна
- * ітерація починається тільки після завершення попередньої.
+ * Uses while-loop instead of setInterval — guarantees that the next
+ * iteration begins only after the previous one completes.
  *
  * @example
  * const executor = new PeriodicExecutor(

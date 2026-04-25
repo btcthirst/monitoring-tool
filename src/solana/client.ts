@@ -1,11 +1,11 @@
 // solana/client.ts
 /**
- * RPC клієнт для роботи з Solana блокчейном.
+ * RPC client for interacting with the Solana blockchain.
  *
- * Особливості:
- * - Retry з експоненційним backoff
- * - Rate limiting між запитами
- * - Chunking для getMultipleAccounts (ліміт 100 акаунтів за запит)
+ * Features:
+ * - Retry with exponential backoff
+ * - Rate limiting between requests
+ * - Chunking for getMultipleAccounts (limit 100 accounts per request)
  */
 
 import {
@@ -23,7 +23,7 @@ import {
 } from './constants';
 
 // ---------------------------------------------------------------------------
-// Типи
+// Types
 // ---------------------------------------------------------------------------
 
 export type RpcOptions = {
@@ -34,7 +34,7 @@ export type RpcOptions = {
 export type MultipleAccountsResult = Map<string, AccountInfo<Buffer> | null>;
 
 // ---------------------------------------------------------------------------
-// Клас
+// Class
 // ---------------------------------------------------------------------------
 
 export class SolanaRpcClient {
@@ -57,7 +57,7 @@ export class SolanaRpcClient {
   }
 
   // ---------------------------------------------------------------------------
-  // Публічні методи
+  // Public Methods
   // ---------------------------------------------------------------------------
 
   async getProgramAccounts(
@@ -88,8 +88,8 @@ export class SolanaRpcClient {
   }
 
   /**
-   * Отримання множинних акаунтів.
-   * Приймає PublicKey[] — автоматично розбиває на chunks.
+   * Fetch multiple accounts.
+   * Accepts PublicKey[] — automatically splits into chunks.
    */
   async getMultipleAccounts(
     publicKeys: PublicKey[],
@@ -162,7 +162,7 @@ export class SolanaRpcClient {
   }
 
   // ---------------------------------------------------------------------------
-  // Приватні хелпери
+  // Private Helpers
   // ---------------------------------------------------------------------------
 
   private async rateLimit(): Promise<void> {
@@ -205,7 +205,7 @@ export class SolanaRpcClient {
 }
 
 // ---------------------------------------------------------------------------
-// Хелпери
+// Helpers
 // ---------------------------------------------------------------------------
 
 function sleep(ms: number): Promise<void> {

@@ -1,8 +1,8 @@
 // solana/constants.ts
 /**
- * Solana та Raydium CPMM константи.
- * Офсети акаунтів більше не потрібні — використовуємо Raydium SDK v2
- * який надає типізовані layout декодери.
+ * Solana and Raydium CPMM constants.
+ * Account offsets are no longer needed — using Raydium SDK v2
+ * which provides typed layout decoders.
  */
 
 import { PublicKey } from '@solana/web3.js';
@@ -13,18 +13,18 @@ import { PublicKey } from '@solana/web3.js';
 
 /**
  * Raydium CPMM Program ID (Mainnet)
- * Джерело: https://docs.raydium.io/raydium/traders/trade-api
+ * Source: https://docs.raydium.io/raydium/traders/trade-api
  */
 export const RAYDIUM_CPMM_PROGRAM_ID = new PublicKey(
   'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C',
 );
 
 // ---------------------------------------------------------------------------
-// Seeds для PDA деривації
+// Seeds for PDA Derivation
 // ---------------------------------------------------------------------------
 
 /**
- * Seeds верифіковано по:
+ * Seeds verified against:
  * raydium-io/raydium-cp-swap/programs/cp-swap/src/states/pool.rs
  */
 export const POOL_SEED = 'pool';
@@ -34,19 +34,19 @@ export const OBSERVATION_SEED = 'observation';
 export const AMM_CONFIG_SEED = 'amm_config';
 
 // ---------------------------------------------------------------------------
-// Розміри акаунтів (для dataSize фільтра в getProgramAccounts)
+// Account Sizes (for dataSize filter in getProgramAccounts)
 // ---------------------------------------------------------------------------
 
 export const CPMM_POOL_ACCOUNT_SIZE = 752;
 
 // ---------------------------------------------------------------------------
-// Статус пулу
+// Pool Status
 // ---------------------------------------------------------------------------
 
 /**
- * Бітова маска статусу пулу.
- * Якщо біт встановлено — відповідна операція вимкнена.
- * Джерело: PoolStatusBitIndex в Raydium CPMM
+ * Pool status bitmask.
+ * If a bit is set, the corresponding operation is disabled.
+ * Source: PoolStatusBitIndex in Raydium CPMM
  */
 export const POOL_STATUS_BITS = {
   DEPOSIT_DISABLED: 1, // 0b001
@@ -55,17 +55,17 @@ export const POOL_STATUS_BITS = {
 } as const;
 
 // ---------------------------------------------------------------------------
-// Фолбек fee
+// Fallback fee
 // ---------------------------------------------------------------------------
 
 /**
- * Стандартна комісія Raydium CPMM — 0.25%.
- * Використовується як фолбек якщо SDK не повернув fee.
+ * Standard Raydium CPMM fee is 0.25%.
+ * Used as a fallback if the SDK does not return a fee.
  */
 export const DEFAULT_FEE_BPS = 25;
 
 // ---------------------------------------------------------------------------
-// RPC ліміти
+// RPC Limits
 // ---------------------------------------------------------------------------
 
 export const MAX_ACCOUNTS_PER_RPC_CALL = 100;
@@ -76,11 +76,11 @@ export const RPC_RETRY_DELAY_MS = 1000;
 // SPL Token
 // ---------------------------------------------------------------------------
 
-/** Офсет балансу в SPL Token account (для прямого читання якщо треба) */
+/** Balance offset in SPL Token account (for direct reading if necessary) */
 export const SPL_TOKEN_AMOUNT_OFFSET = 64;
 
 // ---------------------------------------------------------------------------
-// Відомі mint адреси
+// Known Mint Addresses
 // ---------------------------------------------------------------------------
 
 export const KNOWN_MINTS = {

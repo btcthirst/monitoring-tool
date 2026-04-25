@@ -1,12 +1,12 @@
 // logger/logger.ts
 /**
- * Singleton логер для всього проєкту (Winston)
+ * Singleton logger for the whole project (Winston)
  *
- * Особливості:
- * - Ініціалізується з дефолтним рівнем (info) без залежності від config/
- * - Рівень логування можна оновити після завантаження конфігурації
- * - Структуровані JSON логи у файли, читабельний вивід у консоль
- * - Ротація лог-файлів (10 MB, 5 файлів)
+ * Features:
+ * - Initializes with a default level (info) without dependency on config/
+ * - Log level can be updated after configuration is loaded
+ * - Structured JSON logs to files, readable output to console
+ * - Log file rotation (10 MB, 5 files)
  */
 
 import winston from 'winston';
@@ -14,7 +14,7 @@ import path from 'path';
 import fs from 'fs';
 
 // ---------------------------------------------------------------------------
-// Константи
+// Constants
 // ---------------------------------------------------------------------------
 
 const LOG_DIR = path.join(process.cwd(), 'logs');
@@ -22,7 +22,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const MAX_FILES = 5;
 
 // ---------------------------------------------------------------------------
-// Ініціалізація директорії для логів (ліниво — тільки при першому записі)
+// Initialize log directory (lazy — only on first write)
 // ---------------------------------------------------------------------------
 
 function ensureLogDir(): string {
@@ -33,7 +33,7 @@ function ensureLogDir(): string {
 }
 
 // ---------------------------------------------------------------------------
-// Визначення рівня логування
+// Determine log level
 // ---------------------------------------------------------------------------
 
 const VALID_LEVELS = ['error', 'warn', 'info', 'http', 'debug'] as const;
@@ -48,14 +48,14 @@ function resolveLogLevel(): LogLevel {
 }
 
 // ---------------------------------------------------------------------------
-// Формати
+// Formats
 // ---------------------------------------------------------------------------
 
 const consoleFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.colorize({ all: true }),
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
-    // Видаляємо внутрішні поля Winston
+    // Remove internal Winston fields
     const { splat, label, ...rest } = meta as Record<string, unknown>;
     const hasMeta = Object.keys(rest).length > 0;
     const metaStr = hasMeta ? `\n  └─ ${JSON.stringify(rest, null, 2)}` : '';
@@ -70,7 +70,7 @@ const fileFormat = winston.format.combine(
 );
 
 // ---------------------------------------------------------------------------
-// Транспорти
+// Transports
 // ---------------------------------------------------------------------------
 
 function buildFileTransports(): winston.transport[] {
@@ -111,7 +111,7 @@ function buildExceptionTransports(): winston.transport[] {
 }
 
 // ---------------------------------------------------------------------------
-// Створення логера
+// Create logger
 // ---------------------------------------------------------------------------
 
 const initialLevel = resolveLogLevel();
@@ -133,12 +133,12 @@ export const logger = winston.createLogger({
 });
 
 // ---------------------------------------------------------------------------
-// Публічний API
+// Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Оновлення рівня логування після завантаження конфігурації.
- * Викликати з orchestrator після loadConfig().
+ * Update log level after configuration is loaded.
+ * Call from orchestrator after loadConfig().
  */
 export function setLogLevel(level: LogLevel): void {
   logger.level = level;
@@ -148,8 +148,8 @@ export function setLogLevel(level: LogLevel): void {
 }
 
 /**
- * Увімкнення/вимкнення запису у файли.
- * При logToFile=false — залишається тільки консоль.
+ * Enable/disable file logging.
+ * When logToFile=false — only console remains.
  */
 export function setFileLogging(enabled: boolean): void {
   logger.transports.forEach((t) => {
@@ -160,19 +160,19 @@ export function setFileLogging(enabled: boolean): void {
 }
 
 /**
- * Child-логер з фіксованим контекстом (наприклад, для кожного модуля).
+ * Child logger with a fixed context (e.g. for each module).
  *
  * @example
  * const log = createChildLogger('PoolDiscovery');
  * log.info('Found pools', { count: 5 });
- * // → { context: 'PoolDiscovery', message: 'Found pools', count: 5 }
+ * // -> { context: 'PoolDiscovery', message: 'Found pools', count: 5 }
  */
 export function createChildLogger(context: string): winston.Logger {
   return logger.child({ context });
 }
 
 /**
- * Логування помилки з повним стеком.
+ * Log error with full stack trace.
  */
 export function logError(error: Error | string, context?: string): void {
   if (error instanceof Error) {
@@ -187,7 +187,7 @@ export function logError(error: Error | string, context?: string): void {
 }
 
 /**
- * Логування тривалості операції.
+ * Log operation duration.
  */
 export function logPerformance(operation: string, durationMs: number, success = true): void {
   logger.log(success ? 'debug' : 'warn', `Performance: ${operation}`, {
@@ -198,7 +198,7 @@ export function logPerformance(operation: string, durationMs: number, success = 
 }
 
 /**
- * Логування RPC виклику (рівень debug).
+ * Log RPC call (debug level).
  */
 export function logRpcCall(
   method: string,
@@ -217,7 +217,7 @@ export function logRpcCall(
 }
 
 /**
- * Логування знайденої арбітражної можливості.
+ * Log detected arbitrage opportunity.
  */
 export function logOpportunity(
   profit: number,

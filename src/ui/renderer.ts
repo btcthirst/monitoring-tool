@@ -1,11 +1,11 @@
 // ui/renderer.ts
 /**
- * Рендерер для виводу арбітражних можливостей в консоль.
+ * Renderer for outputting arbitrage opportunities to the console.
  *
- * Відповідальність:
- * - Відображення live-оновлюваної таблиці
- * - Форматування з кольорами через formatters.ts
- * - Жодної бізнес-логіки
+ * Responsibilities:
+ * - Rendering a live-updating table
+ * - Color formatting via formatters.ts
+ * - Zero business logic
  */
 
 import Table from 'cli-table3';
@@ -27,7 +27,7 @@ import {
 import { formatDuration } from '../utils/time';
 
 // ---------------------------------------------------------------------------
-// Типи
+// Types
 // ---------------------------------------------------------------------------
 
 export interface RenderOptions {
@@ -40,7 +40,7 @@ export interface RenderOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Головний рендерер
+// Main Renderer
 // ---------------------------------------------------------------------------
 
 export class Renderer {
@@ -49,7 +49,7 @@ export class Renderer {
   private sessionOpportunities = 0;
 
   /**
-   * Головний метод — очищує екран та рендерить повний layout.
+   * Main method — clears the screen and renders the full layout.
    */
   render(opportunities: Opportunity[], options: RenderOptions): void {
     this.clearScreen();
@@ -64,7 +64,7 @@ export class Renderer {
   }
 
   /**
-   * Екран підключення до RPC.
+   * RPC connection screen.
    */
   renderConnecting(rpcUrl: string): void {
     this.clearScreen();
@@ -74,20 +74,20 @@ export class Renderer {
   }
 
   /**
-   * Повідомлення про успішне підключення.
+   * Successful connection message.
    */
   renderConnected(poolsFound: number): void {
     console.log(chalk.green.bold('\n✅ Connected successfully'));
     console.log(
       poolsFound >= 2
         ? chalk.green(`   Found ${poolsFound} Raydium CPMM pools — monitoring started`)
-        : chalk.yellow(`   Found ${poolsFound} pool (need ≥2 for arbitrage — waiting for more)`),
+        : chalk.yellow(`   Found ${poolsFound} pool (need >=2 for arbitrage — waiting for more)`),
     );
     console.log();
   }
 
   /**
-   * Вивід помилки (без виходу з програми).
+   * Error output (without exiting the program).
    */
   renderError(error: Error): void {
     this.clearScreen();
@@ -99,7 +99,7 @@ export class Renderer {
   }
 
   // ---------------------------------------------------------------------------
-  // Приватні методи
+  // Private methods
   // ---------------------------------------------------------------------------
 
   private clearScreen(): void {
@@ -234,12 +234,12 @@ export class Renderer {
 }
 
 // ---------------------------------------------------------------------------
-// Спрощений рендерер (один рядок, без очищення екрану)
+// Simplified Renderer (one line, no screen clearing)
 // ---------------------------------------------------------------------------
 
 /**
- * SimpleRenderer — для quiet режиму або редиректу stdout у файл.
- * Активується через --simple флаг (майбутня функція).
+ * SimpleRenderer — for quiet mode or redirecting stdout to a file.
+ * Activated via --simple flag (future feature).
  */
 export class SimpleRenderer {
   render(opportunities: Opportunity[], options: RenderOptions): void {

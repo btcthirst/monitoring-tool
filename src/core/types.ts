@@ -1,16 +1,16 @@
 // core/types.ts
 /**
- * Чисті доменні типи для арбітражного модуля.
- * Не містять залежностей від Solana/RPC.
+ * Pure domain types for the arbitrage module.
+ * Does not contain dependencies on Solana/RPC.
  */
 
 // ---------------------------------------------------------------------------
-// Пул
+// Pool
 // ---------------------------------------------------------------------------
 
 /**
- * Сирий пул з блокчейну.
- * Резерви зберігаються як bigint (lamports / raw units).
+ * Raw pool from the blockchain.
+ * Reserves are stored as bigint (lamports / raw units).
  */
 export type RawPool = {
   address: string;
@@ -20,100 +20,100 @@ export type RawPool = {
   reserveB: bigint;
   decimalsA: number;
   decimalsB: number;
-  /** Комісія в basis points (25 = 0.25%) */
+  /** Fee in basis points (25 = 0.25%) */
   feeBps: number;
 };
 
 /**
- * Нормалізований пул.
- * Резерви конвертовані в number з урахуванням decimals — готові до математики.
+ * Normalized pool.
+ * Reserves are converted to number considering decimals — ready for math.
  */
 export type NormalizedPool = {
   address: string;
   tokenA: string;
   tokenB: string;
-  /** Резерв токена A в нормалізованих одиницях */
+  /** Reserve of token A in normalized units */
   reserveA: number;
-  /** Резерв токена B в нормалізованих одиницях */
+  /** Reserve of token B in normalized units */
   reserveB: number;
-  /** Комісія як десятковий дріб (0.0025 = 0.25%) */
+  /** Fee as decimal (0.0025 = 0.25%) */
   fee: number;
   decimalsA: number;
   decimalsB: number;
 };
 
 // ---------------------------------------------------------------------------
-// Конфігурація арбітражу
+// Arbitrage Configuration
 // ---------------------------------------------------------------------------
 
 /**
- * Параметри для пошуку та оцінки арбітражних можливостей.
- * Всі суми — в нормалізованих одиницях quote токена.
+ * Parameters for finding and evaluating arbitrage opportunities.
+ * All amounts are in normalized quote token units.
  */
 export type ArbitrageConfig = {
-  /** Розмір симульованої угоди (наприклад 100 USDC) */
+  /** Simulated trade size (e.g. 100 USDC) */
   tradeSize: number;
-  /** Мінімальний чистий прибуток для сигналу */
+  /** Minimum net profit for signal */
   minProfit: number;
   /**
-   * Максимально допустиме прослизання як десятковий дріб.
-   * 0.05 = 5%. Перевіряється окремо для buy і sell свапу.
+   * Max allowed slippage as decimal.
+   * 0.05 = 5%. Checked separately for buy and sell swap.
    */
   maxSlippage: number;
-  /** Вартість транзакції в quote токені (враховується в net profit) */
+  /** Transaction cost in quote token (accounted for in net profit) */
   txCostInQuote: number;
-  /** Mint address quote токена (для контексту логування та UI) */
+  /** Mint address of quote token (for logging and UI context) */
   quoteMint: string;
 };
 
 // ---------------------------------------------------------------------------
-// Результат арбітражу
+// Arbitrage Result
 // ---------------------------------------------------------------------------
 
 /**
- * Арбітражна можливість — результат симуляції двох свапів.
+ * Arbitrage opportunity — result of simulating two swaps.
  */
 export type Opportunity = {
   buyPool: NormalizedPool;
   sellPool: NormalizedPool;
-  /** Вхідна сума в quote токені */
+  /** Input amount in quote token */
   amountIn: number;
-  /** Вихідна сума в quote токені після обох свапів */
+  /** Output amount in quote token after both swaps */
   amountOut: number;
-  /** Валовий прибуток = amountOut - amountIn (до вирахування tx cost) */
+  /** Gross profit = amountOut - amountIn (before tx cost) */
   grossProfit: number;
-  /** Вартість транзакції (з конфігурації) */
+  /** Transaction cost (from config) */
   txCost: number;
-  /** Чистий прибуток = grossProfit - txCost */
+  /** Net profit = grossProfit - txCost */
   netProfit: number;
-  /** Чистий прибуток відносно amountIn, у відсотках */
+  /** Net profit relative to amountIn, as a percentage */
   profitPercent: number;
   /**
-   * Відносне прослизання на buy свапі.
-   * Від'ємне значення = отримали менше ніж spot price.
-   * Наприклад: -0.003 = -0.3%
+   * Relative slippage on buy swap.
+   * Negative value = received less than spot price.
+   * Example: -0.003 = -0.3%
    */
   slippageBuy: number;
-  /** Відносне прослизання на sell свапі (аналогічно slippageBuy) */
+  /** Relative slippage on sell swap (similar to slippageBuy) */
   slippageSell: number;
-  /** Unix timestamp (ms) моменту розрахунку */
+  /** Unix timestamp (ms) of the calculation moment */
   timestamp: number;
 };
 
 // ---------------------------------------------------------------------------
-// Допоміжні типи
+// Helper Types
 // ---------------------------------------------------------------------------
 
 /**
- * Результат валідації.
- * Використовується там де помилка не є винятком (м'яка перевірка).
+ * Validation result.
+ * Used where error is not an exception (soft check).
  */
 export type ValidationResult =
   | { isValid: true; maxAmount?: number }
   | { isValid: false; error: string; maxAmount?: number };
 
 /**
- * Статистика по набору можливостей.
+ * Statistics for a set of opportunities.
  */
 export type OpportunityStats = {
   count: number;

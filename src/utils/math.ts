@@ -1,24 +1,24 @@
 // utils/math.ts
 /**
- * Математичні утиліти для фінансових розрахунків.
+ * Mathematical utilities for financial calculations.
  *
- * Decimal.js використовується тільки для форматування та допоміжних операцій.
- * Основна математика арбітражу (pricing.ts) використовує нативний number —
- * для моніторингового інструменту це достатньо і значно швидше.
+ * Decimal.js is used only for formatting and auxiliary operations.
+ * Core arbitrage math (pricing.ts) uses native number —
+ * sufficient for a monitoring tool and significantly faster.
  */
 
 import Decimal from 'decimal.js';
 
-// Налаштування Decimal.js
+// Decimal.js configuration
 Decimal.set({
   precision: 20,
-  rounding: Decimal.ROUND_DOWN, // Консервативне округлення для фінансів
+  rounding: Decimal.ROUND_DOWN, // Conservative rounding for finance
   toExpNeg: -18,
   toExpPos: 18,
 });
 
 // ---------------------------------------------------------------------------
-// Типи
+// Types
 // ---------------------------------------------------------------------------
 
 export type MathInput = number | string | Decimal | bigint;
@@ -30,7 +30,7 @@ function toDecimal(value: MathInput): Decimal {
 }
 
 // ---------------------------------------------------------------------------
-// Базові операції з високою точністю
+// Basic operations with high precision
 // ---------------------------------------------------------------------------
 
 export function add(a: MathInput, b: MathInput): number {
@@ -46,7 +46,7 @@ export function mul(a: MathInput, b: MathInput): number {
 }
 
 /**
- * @throws {Error} при діленні на нуль
+ * @throws {Error} on division by zero
  */
 export function div(a: MathInput, b: MathInput): number {
   const divisor = toDecimal(b);
@@ -67,12 +67,12 @@ export function max(a: MathInput, b: MathInput): number {
 }
 
 // ---------------------------------------------------------------------------
-// Округлення
+// Rounding
 // ---------------------------------------------------------------------------
 
 /**
- * Округлення до N знаків після коми.
- * За замовчуванням ROUND_DOWN — консервативне для фінансових розрахунків.
+ * Round to N decimal places.
+ * Default is ROUND_DOWN — conservative for financial calculations.
  */
 export function round(
   value: MathInput,
@@ -83,7 +83,7 @@ export function round(
 }
 
 /**
- * Обмеження значення в діапазоні [minVal, maxVal].
+ * Clamp value within the range [minVal, maxVal].
  */
 export function clamp(value: MathInput, minVal: MathInput, maxVal: MathInput): number {
   const v = toDecimal(value);
@@ -95,11 +95,11 @@ export function clamp(value: MathInput, minVal: MathInput, maxVal: MathInput): n
 }
 
 // ---------------------------------------------------------------------------
-// Порівняння
+// Comparison
 // ---------------------------------------------------------------------------
 
 /**
- * Порівняння двох чисел з epsilon-точністю.
+ * Compare two numbers with epsilon precision.
  * @returns 1 | 0 | -1
  */
 export function compare(a: MathInput, b: MathInput, epsilon = 1e-12): number {
@@ -113,12 +113,12 @@ export function isZero(value: MathInput, epsilon = 1e-12): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Форматування (використовується в UI та logger)
+// Formatting (used in UI and logger)
 // ---------------------------------------------------------------------------
 
 /**
- * Форматування числа для виводу.
- * stripTrailingZeros: '1.500000' → '1.5'
+ * Format number for output.
+ * stripTrailingZeros: '1.500000' -> '1.5'
  */
 export function formatNumber(
   value: MathInput,
@@ -126,26 +126,26 @@ export function formatNumber(
   stripTrailingZeros = true,
 ): string {
   const rounded = round(value, decimals).toString();
-  // Переконуємось що є десяткова крапка перед strip
+  // Ensure there is a decimal point before strip
   const withDot = rounded.includes('.') ? rounded : `${rounded}.${'0'.repeat(decimals)}`;
   return stripTrailingZeros ? withDot.replace(/\.?0+$/, '') : withDot;
 }
 
 // ---------------------------------------------------------------------------
-// Конвертація bigint ↔ Decimal
+// bigint <-> Decimal Conversion
 // ---------------------------------------------------------------------------
 
 /**
- * Конвертація bigint (raw lamports) → Decimal з урахуванням decimals.
- * @example bigintToDecimal(1_000_000n, 6) → Decimal('1')
+ * Convert bigint (raw lamports) -> Decimal considering decimals.
+ * @example bigintToDecimal(1_000_000n, 6) -> Decimal('1')
  */
 export function bigintToDecimal(value: bigint, decimals = 0): Decimal {
   return new Decimal(value.toString()).dividedBy(new Decimal(10).pow(decimals));
 }
 
 /**
- * Конвертація Decimal → bigint.
- * @throws {Error} якщо є дробова частина після масштабування
+ * Convert Decimal -> bigint.
+ * @throws {Error} if there is a fractional part after scaling
  */
 export function decimalToBigint(value: Decimal, decimals = 0): bigint {
   const scaled = value.times(new Decimal(10).pow(decimals));
@@ -158,11 +158,11 @@ export function decimalToBigint(value: Decimal, decimals = 0): bigint {
 }
 
 // ---------------------------------------------------------------------------
-// Статистика
+// Statistics
 // ---------------------------------------------------------------------------
 
 /**
- * Відсоткова зміна: (new − old) / old × 100
+ * Percentage change: (new - old) / old * 100
  */
 export function percentChange(oldValue: MathInput, newValue: MathInput): number {
   const old = toDecimal(oldValue);

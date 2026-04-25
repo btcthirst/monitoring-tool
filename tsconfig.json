@@ -1,31 +1,31 @@
 {
   "compilerOptions": {
-    /* Мова та середовище */
+    /* Language and Environment */
     "target": "ES2022",
     "lib": [
       "ES2022"
     ],
     "module": "commonjs",
     "moduleResolution": "node",
-    /* Шляхи */
+    /* Paths */
     "rootDir": "src",
     "outDir": "dist",
-    /* Суворі перевірки */
+    /* Strict Checks */
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
     "exactOptionalPropertyTypes": true,
-    /* Допоміжні опції */
+    /* Helper Options */
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "skipLibCheck": true,
-    /* Source maps для дебагу */
+    /* Source maps for debugging */
     "sourceMap": true,
     "declaration": true,
     "declarationMap": true,
-    /* BigInt підтримка */
+    /* BigInt support */
     "useDefineForClassFields": true
   },
   "include": [

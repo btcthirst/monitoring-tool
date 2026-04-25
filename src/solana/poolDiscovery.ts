@@ -1,11 +1,11 @@
 // solana/poolDiscovery.ts
 /**
- * Пошук та завантаження Raydium CPMM пулів через SDK v2.
+ * Discovery and loading of Raydium CPMM pools via SDK v2.
  *
- * Процес discovery (3 етапи):
- * 1. getProgramAccounts з dataSize + memcmp фільтрами → акаунти пулів
- * 2. SDK декодує PoolState → отримуємо vault адреси та ammConfig
- * 3. getMultipleAccounts для vaults → резерви; для ammConfigs → fee rates
+ * Discovery process (3 stages):
+ * 1. getProgramAccounts with dataSize + memcmp filters -> pool accounts
+ * 2. SDK decodes PoolState -> retrieve vault addresses and configId
+ * 3. getMultipleAccounts for vaults -> reserves; for configIds -> fee rates
  */
 
 import { PublicKey, GetProgramAccountsFilter } from '@solana/web3.js';
@@ -26,17 +26,17 @@ import {
 } from './parsers';
 
 // ---------------------------------------------------------------------------
-// Константи
+// Constants
 // ---------------------------------------------------------------------------
 
 const CACHE_TTL_MS = 30_000;
 
-// Офсети для memcmp фільтрів — беремо з SDK layout
-const TOKEN_0_MINT_OFFSET = CpmmPoolInfoLayout.offsetOf('token0Mint');
-const TOKEN_1_MINT_OFFSET = CpmmPoolInfoLayout.offsetOf('token1Mint');
+// Offsets for memcmp filters — taken from SDK layout
+const TOKEN_0_MINT_OFFSET = CpmmPoolInfoLayout.offsetOf('mintA');
+const TOKEN_1_MINT_OFFSET = CpmmPoolInfoLayout.offsetOf('mintB');
 
 // ---------------------------------------------------------------------------
-// Кеш
+// Cache
 // ---------------------------------------------------------------------------
 
 interface CacheEntry {
@@ -52,12 +52,12 @@ export function clearPoolCache(): void {
 }
 
 // ---------------------------------------------------------------------------
-// Фільтри
+// Filters
 // ---------------------------------------------------------------------------
 
 /**
- * Побудова фільтрів для getProgramAccounts.
- * Офсети беруться з SDK layout — не хардкодимо вручну.
+ * Build filters for getProgramAccounts.
+ * Offsets are taken from the SDK layout — no manual hardcoding.
  */
 export function buildPoolFilters(mintA: string, mintB: string): GetProgramAccountsFilter[] {
   const sorted = [mintA, mintB].sort();
@@ -72,11 +72,11 @@ export function buildPoolFilters(mintA: string, mintB: string): GetProgramAccoun
 }
 
 // ---------------------------------------------------------------------------
-// Головна функція discovery
+// Main discovery function
 // ---------------------------------------------------------------------------
 
 /**
- * Знаходження всіх активних CPMM пулів для пари токенів.
+ * Find all active CPMM pools for a token pair.
  */
 export async function findPoolsForPair(
   rpcClient: SolanaRpcClient,
@@ -100,7 +100,7 @@ export async function findPoolsForPair(
   logger.info('Discovering CPMM pools via SDK', { mintA, mintB });
   const startTime = Date.now();
 
-  // ─── Етап 1: getProgramAccounts ───────────────────────────────────────────
+  // --- Stage 1: getProgramAccounts -------------------------------------------
 
   const filters = buildPoolFilters(mintA, mintB);
   const rawAccounts = await rpcClient.getProgramAccounts(RAYDIUM_CPMM_PROGRAM_ID, filters);
@@ -112,7 +112,7 @@ export async function findPoolsForPair(
 
   logger.debug('Raw accounts fetched', { count: rawAccounts.length });
 
-  // ─── Етап 2: SDK декодування PoolState ────────────────────────────────────
+  // --- Stage 2: SDK decoding PoolState ---------------------------------------
 
   const decoded = rawAccounts
     .map(({ publicKey, account }) => {
@@ -131,25 +131,25 @@ export async function findPoolsForPair(
     return [];
   }
 
-  // ─── Етап 3: Vault баланси + AmmConfig fee ────────────────────────────────
+  // --- Stage 3: Vault balances + AmmConfig fee ------------------------------
 
-  // Збираємо всі vault + ammConfig адреси одним batch запитом
+  // Gather all vault + configId addresses in a single batch request
   const vaultAndConfigAddresses = decoded.flatMap(({ state }) => [
-    state.token0Vault,
-    state.token1Vault,
-    state.ammConfig,
+    state.vaultA,
+    state.vaultB,
+    state.configId,
   ]);
 
   const accountsMap = await rpcClient.getMultipleAccounts(vaultAndConfigAddresses);
 
-  // ─── Збірка RawPool ───────────────────────────────────────────────────────
+  // --- Assemble RawPool -----------------------------------------------------
 
   const pools: RawPool[] = [];
 
   for (const { address, state } of decoded) {
-    const vault0Info = accountsMap.get(state.token0Vault.toString());
-    const vault1Info = accountsMap.get(state.token1Vault.toString());
-    const configInfo = accountsMap.get(state.ammConfig.toString());
+    const vault0Info = accountsMap.get(state.vaultA.toString());
+    const vault1Info = accountsMap.get(state.vaultB.toString());
+    const configInfo = accountsMap.get(state.configId.toString());
 
     if (!vault0Info || !vault1Info) {
       logger.debug('Vault account missing', { address: address.toString().slice(0, 8) });
@@ -179,7 +179,7 @@ export async function findPoolsForPair(
     if (pool) pools.push(pool);
   }
 
-  // ─── Кешування ───────────────────────────────────────────────────────────
+  // --- Caching -------------------------------------------------------------
 
   if (useCache && pools.length > 0) {
     poolCache.set(cacheKey, { pools, timestamp: Date.now() });
@@ -195,7 +195,7 @@ export async function findPoolsForPair(
 }
 
 // ---------------------------------------------------------------------------
-// Перевірка активності пулу
+// Pool Activity Check
 // ---------------------------------------------------------------------------
 
 export async function isPoolActive(

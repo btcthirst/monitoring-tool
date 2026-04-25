@@ -1,11 +1,11 @@
 // core/arbitrage.ts
 /**
- * Пошук арбітражних можливостей між пулами.
+ * Search for arbitrage opportunities between pools.
  *
- * Правила модуля:
- * - Жодних залежностей від Solana/RPC/logger/UI
- * - Тільки чиста бізнес-логіка
- * - Помилки пробрасуються вгору або повертають null — не логуються тут
+ * Module rules:
+ * - No dependencies on Solana/RPC/logger/UI
+ * - Only pure business logic
+ * - Errors bubble up or return null — not logged here
  */
 
 import {
@@ -27,12 +27,12 @@ import {
 } from './pricing';
 
 // ---------------------------------------------------------------------------
-// Хелпери для роботи з парами пулів
+// Helpers for pool pairs
 // ---------------------------------------------------------------------------
 
 /**
- * Перевірка що два пули торгують однаковою парою токенів
- * (незалежно від порядку tokenA/tokenB).
+ * Check if two pools trade the same token pair
+ * (regardless of tokenA/tokenB order).
  */
 export function isSamePair(a: NormalizedPool, b: NormalizedPool): boolean {
   return (
@@ -42,30 +42,30 @@ export function isSamePair(a: NormalizedPool, b: NormalizedPool): boolean {
 }
 
 /**
- * Канонічний ключ пари токенів (відсортовані адреси через ':').
- * Використовується для групування пулів.
+ * Canonical token pair key (sorted addresses joined by ':').
+ * Used to group pools.
  */
 function pairKey(tokenA: string, tokenB: string): string {
   return [tokenA, tokenB].sort().join(':');
 }
 
 // ---------------------------------------------------------------------------
-// Головна функція
+// Main function
 // ---------------------------------------------------------------------------
 
 /**
- * Знаходження всіх арбітражних можливостей серед масиву пулів.
+ * Find all arbitrage opportunities among an array of pools.
  *
- * Алгоритм:
- * 1. Нормалізуємо всі пули (bigint → number)
- * 2. Групуємо за канонічним ключем пари токенів
- * 3. Для кожної групи перебираємо всі унікальні пари пулів (i, j)
- * 4. Перевіряємо обидва напрямки арбітражу
- * 5. Повертаємо відфільтровані та відсортовані можливості
+ * Algorithm:
+ * 1. Normalize all pools (bigint -> number)
+ * 2. Group by canonical token pair key
+ * 3. For each group, iterate over all unique pool pairs (i, j)
+ * 4. Check both arbitrage directions
+ * 5. Return filtered and sorted opportunities
  *
- * @param rawPools — сирі пули з блокчейну
- * @param config   — параметри арбітражу
- * @returns масив можливостей, відсортованих за netProfit (найкращі зверху)
+ * @param rawPools — raw pools from the blockchain
+ * @param config   — arbitrage parameters
+ * @returns array of opportunities, sorted by netProfit (best on top)
  */
 export function findArbitrageOpportunities(
   rawPools: RawPool[],
@@ -73,10 +73,10 @@ export function findArbitrageOpportunities(
 ): Opportunity[] {
   if (rawPools.length < 2) return [];
 
-  // Крок 1: нормалізація
+  // Step 1: normalization
   const pools: NormalizedPool[] = rawPools.map(normalizePool);
 
-  // Крок 2: групування за парою
+  // Step 2: grouping by pair
   const byPair = new Map<string, NormalizedPool[]>();
   for (const pool of pools) {
     const key = pairKey(pool.tokenA, pool.tokenB);
@@ -85,7 +85,7 @@ export function findArbitrageOpportunities(
     byPair.set(key, group);
   }
 
-  // Крок 3–4: пошук можливостей
+  // Step 3-4: search for opportunities
   const opportunities: Opportunity[] = [];
 
   for (const group of byPair.values()) {
@@ -105,17 +105,17 @@ export function findArbitrageOpportunities(
     }
   }
 
-  // Крок 5: сортування
+  // Step 5: sorting
   return opportunities.sort((a, b) => b.netProfit - a.netProfit);
 }
 
 // ---------------------------------------------------------------------------
-// Оцінка одного напрямку
+// Single direction evaluation
 // ---------------------------------------------------------------------------
 
 /**
- * Симуляція арбітражу: купуємо в buyPool, продаємо в sellPool.
- * Повертає Opportunity якщо угода прибуткова, інакше null.
+ * Arbitrage simulation: buy in buyPool, sell in sellPool.
+ * Returns Opportunity if trade is profitable, otherwise null.
  */
 function evaluateDirection(
   buyPool: NormalizedPool,
@@ -124,29 +124,29 @@ function evaluateDirection(
 ): Opportunity | null {
   if (!isSamePair(buyPool, sellPool)) return null;
 
-  // Валідація розміру угоди для обох пулів
+  // Trade size validation for both pools
   const buyCheck = validateTradeSize(buyPool, config.tradeSize);
   const sellCheck = validateTradeSize(sellPool, config.tradeSize);
 
   if (!buyCheck.isValid || !sellCheck.isValid) return null;
 
-  // Симуляція
+  // Simulation
   let result: ReturnType<typeof simulateTwoHopArbitrage>;
   try {
     result = simulateTwoHopArbitrage(buyPool, sellPool, config.tradeSize);
   } catch {
-    // Математична помилка (наприклад, переповнення) — пропускаємо пару
+    // Math error (e.g. overflow) — skip pair
     return null;
   }
 
   const { amountOut, slippageBuy, slippageSell } = result;
 
-  // Розрахунок прибутку
+  // Profit calculation
   const grossProfit = calculateGrossProfit(config.tradeSize, amountOut);
   const netProfit = calculateNetProfit(grossProfit, config.txCostInQuote);
   const profitPercent = calculateProfitPercent(netProfit, config.tradeSize);
 
-  // Фільтр прибутковості
+  // Profitability filter
   const { profitable } = isProfitable(
     grossProfit,
     config.txCostInQuote,
@@ -174,18 +174,18 @@ function evaluateDirection(
 }
 
 // ---------------------------------------------------------------------------
-// Утиліти для роботи з результатами
+// Utilities for working with results
 // ---------------------------------------------------------------------------
 
 /**
- * Повертає перші N можливостей (масив вже відсортований).
+ * Returns top N opportunities (array is already sorted).
  */
 export function getTopOpportunities(opportunities: Opportunity[], limit: number): Opportunity[] {
   return opportunities.slice(0, limit);
 }
 
 /**
- * Фільтрація за мінімальним відсотком прибутку.
+ * Filter by minimum profit percentage.
  */
 export function filterByProfitPercent(
   opportunities: Opportunity[],
@@ -195,7 +195,7 @@ export function filterByProfitPercent(
 }
 
 /**
- * Групування можливостей за адресою buy pool.
+ * Group opportunities by buy pool address.
  */
 export function groupByBuyPool(opportunities: Opportunity[]): Map<string, Opportunity[]> {
   const grouped = new Map<string, Opportunity[]>();
@@ -208,7 +208,7 @@ export function groupByBuyPool(opportunities: Opportunity[]): Map<string, Opport
 }
 
 /**
- * Агрегована статистика по набору можливостей.
+ * Aggregated statistics for a set of opportunities.
  */
 export function getOpportunityStats(opportunities: Opportunity[]): OpportunityStats {
   if (opportunities.length === 0) {

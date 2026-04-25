@@ -1,24 +1,24 @@
 // config/index.ts
 /**
- * Завантаження та валідація конфігурації
+ * Load and validate configuration
  *
- * Пріоритет: CLI args > .env > дефолт
+ * Priority: CLI args > .env > defaults
  */
 
 import { config as dotenvConfig } from 'dotenv';
 import { ZodError } from 'zod';
 import { ConfigSchema, Config, DEFAULT_VALUES } from './schema';
 
-// Завантаження .env (викликається один раз при імпорті модуля)
+// Load .env (called once on module import)
 dotenvConfig();
 
 // ---------------------------------------------------------------------------
-// Внутрішні хелпери
+// Internal helpers
 // ---------------------------------------------------------------------------
 
 /**
- * Безпечне читання числа з рядка.
- * Повертає undefined якщо рядок відсутній або не є числом.
+ * Safely parse a number from a string.
+ * Returns undefined if string is missing or not a number.
  */
 function parseIntSafe(value: string | undefined): number | undefined {
   if (value === undefined || value === '') return undefined;
@@ -38,9 +38,9 @@ function parseBoolSafe(value: string | undefined): boolean | undefined {
 }
 
 /**
- * Завантаження значень з process.env.
- * Повертає тільки поля, які явно присутні в env — решта залишається undefined
- * щоб не перекривати дефолти Zod.
+ * Load values from process.env.
+ * Returns only explicitly present env fields — rest remain undefined
+ * so as not to override Zod defaults.
  */
 function loadFromEnv(): Partial<Config> {
   return Object.fromEntries(
@@ -66,15 +66,15 @@ function loadFromEnv(): Partial<Config> {
 }
 
 // ---------------------------------------------------------------------------
-// Публічний API
+// Public API
 // ---------------------------------------------------------------------------
 
 let cachedConfig: Config | null = null;
 
 /**
- * Завантаження та валідація конфігурації.
+ * Load and validate configuration.
  *
- * @param cliOverrides — значення з CLI (найвищий пріоритет)
+ * @param cliOverrides — values from CLI (highest priority)
  */
 export function loadConfig(cliOverrides?: Partial<Config>): Config {
   const merged = {
@@ -83,7 +83,7 @@ export function loadConfig(cliOverrides?: Partial<Config>): Config {
   };
 
   try {
-    // ConfigSchema.parse застосовує дефолти Zod для відсутніх полів
+    // ConfigSchema.parse applies Zod defaults for missing fields
     const validated = ConfigSchema.parse(merged);
     cachedConfig = validated;
     return validated;
@@ -99,8 +99,8 @@ export function loadConfig(cliOverrides?: Partial<Config>): Config {
 }
 
 /**
- * Отримання кешованої конфігурації (singleton).
- * Якщо конфіг ще не завантажено — завантажує з env + дефолтів.
+ * Get cached configuration (singleton).
+ * If config is not loaded yet — loads from env + defaults.
  */
 export function getConfig(): Config {
   if (!cachedConfig) {
@@ -110,11 +110,11 @@ export function getConfig(): Config {
 }
 
 /**
- * Скидання кешу (використовується в тестах).
+ * Reset cache (used in tests).
  */
 export function resetConfig(): void {
   cachedConfig = null;
 }
 
-// Re-export типів щоб споживачі не імпортували напряму зі schema
+// Re-export types so consumers don't import directly from schema
 export { ConfigSchema, type Config, DEFAULT_VALUES } from './schema';

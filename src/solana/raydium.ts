@@ -1,29 +1,29 @@
 // solana/raydium.ts
 /**
- * Raydium CPMM специфічна логіка через SDK v2.
+ * Raydium CPMM specific logic via SDK v2.
  *
- * SDK надає:
- * - getPdaPoolId() — деривація адреси пулу
- * - getPdaPoolVaultId() — деривація vault адрес
- * - computeAmountIn/Out — симуляція свапів (використовуємо для верифікації)
+ * SDK provides:
+ * - getPdaPoolId() — pool address derivation
+ * - getPdaPoolVaultId() — vault address derivation
+ * - computeAmountIn/Out — swap simulation (used for verification)
  */
 
 import { PublicKey } from '@solana/web3.js';
 import {
   getPdaPoolId,
-  getPdaPoolVault,
+  getPdaPoolVaultId,
   getPdaLpMint,
   DEVNET_PROGRAM_ID,
 } from '@raydium-io/raydium-sdk-v2';
 import { RAYDIUM_CPMM_PROGRAM_ID, POOL_STATUS_BITS } from './constants';
 
 // ---------------------------------------------------------------------------
-// PDA деривація через SDK
+// PDA Derivation via SDK
 // ---------------------------------------------------------------------------
 
 /**
- * Деривація адреси пулу.
- * SDK сам сортує токени і будує правильні seeds.
+ * Derivation of the pool address.
+ * SDK automatically sorts the tokens and builds the correct seeds.
  *
  * @returns { publicKey, nonce }
  */
@@ -36,17 +36,17 @@ export function derivePoolAddress(
 }
 
 /**
- * Деривація адреси vault для токена в пулі.
+ * Derivation of the vault address for a token in the pool.
  */
 export function deriveVaultAddress(
   poolId: PublicKey,
   tokenMint: PublicKey,
 ): { publicKey: PublicKey; nonce: number } {
-  return getPdaPoolVault(RAYDIUM_CPMM_PROGRAM_ID, poolId, tokenMint);
+  return getPdaPoolVaultId(RAYDIUM_CPMM_PROGRAM_ID, poolId, tokenMint);
 }
 
 /**
- * Деривація адреси LP mint.
+ * Derivation of the LP mint address.
  */
 export function deriveLpMintAddress(
   poolId: PublicKey,
@@ -55,7 +55,7 @@ export function deriveLpMintAddress(
 }
 
 // ---------------------------------------------------------------------------
-// Хелпери статусу
+// Status Helpers
 // ---------------------------------------------------------------------------
 
 export function isSwapEnabled(status: number): boolean {
@@ -71,11 +71,11 @@ export function isWithdrawEnabled(status: number): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Сортування токенів (Raydium зберігає token0 < token1)
+// Token Sorting (Raydium stores token0 < token1)
 // ---------------------------------------------------------------------------
 
 /**
- * Повертає токени у відсортованому порядку як Raydium очікує.
+ * Returns tokens in sorted order as Raydium expects.
  */
 export function sortMints(
   mintA: PublicKey,

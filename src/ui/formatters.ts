@@ -1,23 +1,23 @@
 // ui/formatters.ts
 /**
- * Чисті функції форматування для виводу в консоль.
+ * Pure formatting functions for console output.
  *
- * Правила:
- * - Жодних side effects
- * - Жодної бізнес-логіки
- * - chalk тільки тут, не в renderer напряму
+ * Rules:
+ * - No side effects
+ * - No business logic
+ * - chalk only used here, not directly in renderer
  */
 
 import chalk from 'chalk';
 import { formatNumber as mathFormatNumber } from '../utils/math';
 
 // ---------------------------------------------------------------------------
-// Адреси
+// Addresses
 // ---------------------------------------------------------------------------
 
 /**
- * Скорочення адреси: перші N + останні N символів.
- * @example formatAddress('So111...112', 4, 4) → 'So11...1112'
+ * Abbreviate address: first N + last N characters.
+ * @example formatAddress('So111...112', 4, 4) -> 'So11...1112'
  */
 export function formatAddress(
   address: string,
@@ -33,12 +33,12 @@ export function formatAddressColored(address: string, startLength = 4, endLength
 }
 
 // ---------------------------------------------------------------------------
-// Числа
+// Numbers
 // ---------------------------------------------------------------------------
 
 /**
- * Форматування числа з заданою точністю.
- * Делегує до utils/math.ts для консистентності.
+ * Format number with specified precision.
+ * Delegates to utils/math.ts for consistency.
  */
 export function formatNumber(
   value: number,
@@ -49,7 +49,7 @@ export function formatNumber(
 }
 
 /**
- * Скорочення великих чисел (K / M / B).
+ * Abbreviate large numbers (K / M / B).
  */
 export function formatAbbreviated(value: number): string {
   if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
@@ -59,11 +59,11 @@ export function formatAbbreviated(value: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Прибуток та відсотки
+// Profit and percentages
 // ---------------------------------------------------------------------------
 
 /**
- * Форматування прибутку з кольором (зелений / червоний).
+ * Format profit with color (green / red).
  */
 export function formatProfit(profit: number): string {
   const sign = profit >= 0 ? '+' : '-';
@@ -75,8 +75,8 @@ export function formatProfit(profit: number): string {
 }
 
 /**
- * Форматування відсотку з кольором.
- * @param isPositiveGood — true: зелений при > 0, false: нейтральний
+ * Format percentage with color.
+ * @param isPositiveGood — true: green if > 0, false: neutral
  */
 export function formatPercent(value: number, isPositiveGood = true, decimals = 2): string {
   const sign = value > 0 ? '+' : '';
@@ -88,8 +88,8 @@ export function formatPercent(value: number, isPositiveGood = true, decimals = 2
 }
 
 /**
- * Форматування slippage.
- * Приймає відносне відхилення (−0.003 = −0.3%).
+ * Format slippage.
+ * Accepts relative deviation (−0.003 = −0.3%).
  */
 export function formatSlippage(slippage: number): string {
   const percent = Math.abs(slippage) * 100;
@@ -101,15 +101,15 @@ export function formatSlippage(slippage: number): string {
 }
 
 /**
- * Форматування fee (десятковий дріб → відсоток).
- * @example formatFee(0.0025) → '0.25%'
+ * Format fee (decimal -> percentage).
+ * @example formatFee(0.0025) -> '0.25%'
  */
 export function formatFee(fee: number): string {
   return chalk.gray(`${(fee * 100).toFixed(2)}%`);
 }
 
 // ---------------------------------------------------------------------------
-// Ціна та розмір угоди
+// Price and trade size
 // ---------------------------------------------------------------------------
 
 export function formatPrice(price: number, quoteSymbol = 'USDC', decimals = 6): string {
@@ -121,12 +121,12 @@ export function formatTradeSize(size: number, quoteSymbol = 'USDC'): string {
 }
 
 // ---------------------------------------------------------------------------
-// Час
+// Time
 // ---------------------------------------------------------------------------
 
 /**
- * Відносний час від таймстемпу.
- * @example formatRelativeTime(Date.now() - 5000) → '5s ago'
+ * Relative time from timestamp.
+ * @example formatRelativeTime(Date.now() - 5000) -> '5s ago'
  */
 export function formatRelativeTime(timestampMs: number): string {
   const diff = Date.now() - timestampMs;
@@ -143,25 +143,25 @@ export function formatRelativeTime(timestampMs: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// UI елементи
+// UI elements
 // ---------------------------------------------------------------------------
 
 /**
- * Горизонтальний роздільник.
+ * Horizontal separator.
  */
 export function formatSeparator(char = '═', width = 80): string {
   return chalk.gray(char.repeat(width));
 }
 
 /**
- * Рядок ключ-значення з вирівнюванням.
+ * Key-value string with padding.
  */
 export function formatKeyValue(key: string, value: string, keyWidth = 16): string {
   return `${chalk.gray(key.padEnd(keyWidth))} ${value}`;
 }
 
 /**
- * Статус з іконкою.
+ * Status with icon.
  */
 export function formatStatus(
   status: 'success' | 'error' | 'warning' | 'info',
@@ -178,7 +178,7 @@ export function formatStatus(
 }
 
 /**
- * Довжина рядка без ANSI escape кодів (для правильного padding).
+ * String length without ANSI escape codes (for proper padding).
  */
 export function visibleLength(str: string): number {
   // eslint-disable-next-line no-control-regex
@@ -186,7 +186,7 @@ export function visibleLength(str: string): number {
 }
 
 /**
- * Padding рядка до заданої видимої ширини (враховує ANSI коди).
+ * Pad string to specified visible width (accounts for ANSI codes).
  */
 export function padVisible(str: string, width: number, char = ' '): string {
   const len = visibleLength(str);

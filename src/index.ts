@@ -60,7 +60,7 @@ program
   )
   .option('--log-level <level>', 'Log level (error|warn|info|debug)', process.env.LOG_LEVEL ?? 'info')
   .action(async (options) => {
-    // Lazy import — прискорює --help та валідацію аргументів
+    // Lazy import — speeds up --help and argument validation
     const { startMonitor } = await import('./core/orchestrator');
 
     logger.info('Starting arbitrage monitor', {
@@ -87,7 +87,7 @@ program
     });
   });
 
-// Показуємо help якщо не передано жодної команди
+// Show help if no command is provided
 if (process.argv.length < 3) {
   program.help();
 }
