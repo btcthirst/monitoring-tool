@@ -104,12 +104,12 @@ export function clamp(value: MathInput, minVal: MathInput, maxVal: MathInput): n
  */
 export function compare(a: MathInput, b: MathInput, epsilon = 1e-12): number {
   const diff = toDecimal(a).minus(toDecimal(b)).abs();
-  if (diff.lessThan(epsilon)) return 0;
+  if (diff.lessThanOrEqualTo(epsilon)) return 0;
   return toDecimal(a).greaterThan(toDecimal(b)) ? 1 : -1;
 }
 
 export function isZero(value: MathInput, epsilon = 1e-12): boolean {
-  return toDecimal(value).abs().lessThan(epsilon);
+  return toDecimal(value).abs().lessThanOrEqualTo(epsilon);
 }
 
 // ---------------------------------------------------------------------------
@@ -125,10 +125,9 @@ export function formatNumber(
   decimals = 6,
   stripTrailingZeros = true,
 ): string {
-  const rounded = round(value, decimals).toString();
-  // Ensure there is a decimal point before strip
-  const withDot = rounded.includes('.') ? rounded : `${rounded}.${'0'.repeat(decimals)}`;
-  return stripTrailingZeros ? withDot.replace(/\.?0+$/, '') : withDot;
+  const rounded = toDecimal(value).toDecimalPlaces(decimals, Decimal.ROUND_DOWN);
+  const fixed = rounded.toFixed(decimals);
+  return stripTrailingZeros ? fixed.replace(/\.?0+$/, '') : fixed;
 }
 
 // ---------------------------------------------------------------------------
