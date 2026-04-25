@@ -185,7 +185,16 @@ export class ArbitrageOrchestrator {
 
       return true;
     } catch (error) {
-      logError(error as Error, 'discoverPools');
+      const err = error as Error;
+      logError(err, 'discoverPools');
+
+      if (err.message.toLowerCase().includes('fetch failed') || err.message.includes('403')) {
+        logger.warn(
+          'Public RPC endpoints often block getProgramAccounts or complex filters. ' +
+          'It is highly recommended to use a private RPC provider (Helius, QuickNode, Alchemy).'
+        );
+      }
+
       return false;
     }
   }

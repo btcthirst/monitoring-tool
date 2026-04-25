@@ -28,6 +28,9 @@ The tool is built with a strong emphasis on clean architecture and separation of
 ### Prerequisites
 - Node.js >= 18.0.0
 - npm or yarn
+- **Private Solana RPC Node** (Helius, QuickNode, Alchemy, etc.).
+  > [!IMPORTANT]
+  > Public RPC nodes (like `api.mainnet-beta.solana.com`) usually block `getProgramAccounts` with complex filters, which this tool uses for pool discovery. A private RPC is required for stable operation.
 
 ### Setup Instructions
 
