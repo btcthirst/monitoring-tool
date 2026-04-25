@@ -8,7 +8,7 @@
  */
 
 import { PublicKey, AccountInfo, Connection } from '@solana/web3.js';
-import { CpmmPoolInfoLayout, CpmmConfigInfoLayout, ApiV3PoolInfoStandardItemCpmm } from '@raydium-io/raydium-sdk-v2';
+import { CpmmPoolInfoLayout, CpmmConfigInfoLayout } from '@raydium-io/raydium-sdk-v2';
 import { RawPool } from '../core/types';
 import { logger } from '../logger/logger';
 import {

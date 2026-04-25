@@ -46,10 +46,6 @@ interface CacheEntry {
 
 const poolCache = new Map<string, CacheEntry>();
 
-export function clearPoolCache(): void {
-  poolCache.clear();
-  logger.debug('Pool cache cleared');
-}
 
 // ---------------------------------------------------------------------------
 // Filters
@@ -205,21 +201,4 @@ export async function findPoolsForPair(
   });
 
   return pools;
-}
-
-// ---------------------------------------------------------------------------
-// Pool Activity Check
-// ---------------------------------------------------------------------------
-
-export async function isPoolActive(
-  rpcClient: SolanaRpcClient,
-  poolAddress: PublicKey,
-): Promise<boolean> {
-  const accountInfo = await rpcClient.getAccountInfo(poolAddress);
-  if (!accountInfo) return false;
-
-  const decoded = decodePoolState(poolAddress, accountInfo);
-  if (!decoded) return false;
-
-  return isSwapEnabled(decoded);
 }

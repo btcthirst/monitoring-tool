@@ -102,10 +102,6 @@ export class PerformanceTimer {
     return { elapsedMs, elapsedFormatted: formatDuration(elapsedMs) };
   }
 
-  reset(): void {
-    // TypeScript does not allow reassigning readonly — instead
-    // create a new PerformanceTimer if a reset is needed
-  }
 }
 
 // ---------------------------------------------------------------------------

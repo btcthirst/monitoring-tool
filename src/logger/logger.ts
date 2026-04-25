@@ -148,54 +148,8 @@ export function setLogLevel(level: LogLevel): void {
 }
 
 /**
- * Enable/disable file logging.
- * When logToFile=false — only console remains.
+ * Log detected arbitrage opportunity.
  */
-export function setFileLogging(enabled: boolean): void {
-  logger.transports.forEach((t) => {
-    if (t instanceof winston.transports.File) {
-      t.silent = !enabled;
-    }
-  });
-}
-
-/**
- * Child logger with a fixed context (e.g. for each module).
- *
- * @example
- * const log = createChildLogger('PoolDiscovery');
- * log.info('Found pools', { count: 5 });
- * // -> { context: 'PoolDiscovery', message: 'Found pools', count: 5 }
- */
-export function createChildLogger(context: string): winston.Logger {
-  return logger.child({ context });
-}
-
-/**
- * Log error with full stack trace.
- */
-export function logError(error: Error | string, context?: string): void {
-  if (error instanceof Error) {
-    logger.error(error.message, {
-      name: error.name,
-      stack: error.stack,
-      ...(context ? { context } : {}),
-    });
-  } else {
-    logger.error(error, { ...(context ? { context } : {}) });
-  }
-}
-
-/**
- * Log operation duration.
- */
-export function logPerformance(operation: string, durationMs: number, success = true): void {
-  logger.log(success ? 'debug' : 'warn', `Performance: ${operation}`, {
-    operation,
-    durationMs,
-    success,
-  });
-}
 
 /**
  * Log RPC call (debug level).
@@ -214,6 +168,21 @@ export function logRpcCall(
       ? { params: JSON.stringify(params).slice(0, 200) }
       : {}),
   });
+}
+
+/**
+ * Log error with full stack trace.
+ */
+export function logError(error: Error | string, context?: string): void {
+  if (error instanceof Error) {
+    logger.error(error.message, {
+      name: error.name,
+      stack: error.stack,
+      ...(context ? { context } : {}),
+    });
+  } else {
+    logger.error(error, { ...(context ? { context } : {}) });
+  }
 }
 
 /**

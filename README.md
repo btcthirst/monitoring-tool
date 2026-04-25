@@ -36,7 +36,7 @@ The tool is built with a strong emphasis on clean architecture and separation of
 
 1. Clone the repository:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/btcthirst/monitoring-tool.git
    cd monitoring-tool
    ```
 

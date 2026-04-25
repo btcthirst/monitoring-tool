@@ -20,23 +20,14 @@ import { logger, setLogLevel, logError, logOpportunity } from '../logger/logger'
 import { PerformanceTimer, PeriodicExecutor } from '../utils/time';
 import { resolveSymbol } from '../ui/formatters';
 import { formatNumber } from '../utils/math';
+import { Config } from '../config';
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export interface OrchestratorConfig {
-  rpcUrl: string;
-  mintA: string;
-  mintB: string;
-  quoteMint: string;
-  pollingIntervalMs: number;
-  minProfitThreshold: number;
-  tradeSize: number;
-  maxSlippagePercent: number;
-  txCostInQuote: number;
-  logLevel?: string;
-}
+// Re-use central Config type
+export type OrchestratorConfig = Config;
 
 interface MonitoringState {
   isRunning: boolean;

@@ -11,7 +11,7 @@ describe('arbitrage logic', () => {
     minProfit: 10,
     maxSlippage: 0.01,
     txCostInQuote: 1,
-    quoteMint: 'Q'.repeat(44),
+    quoteMint: tokenB,
   };
 
   const pool1: RawPool = {

@@ -92,6 +92,40 @@ describe('pricing.ts', () => {
       expect(result.amountOut).toBeLessThan(1100); // Definitely less than 1.1x
       expect(result.amountOut).toBeGreaterThan(0);
     });
+
+    it('should handle reverse pair (quote is tokenA)', () => {
+      // In this case, QUOTE is tokenA
+      const buyPoolRev: NormalizedPool = {
+        address: 'pool1_rev',
+        tokenA: 'QUOTE',
+        tokenB: 'BASE',
+        reserveA: 10000,
+        reserveB: 1000,
+        tvl: 20000,
+        fee: 0.003,
+        decimalsA: 6,
+        decimalsB: 9,
+      };
+
+      const sellPoolRev: NormalizedPool = {
+        address: 'pool2_rev',
+        tokenA: 'QUOTE',
+        tokenB: 'BASE',
+        reserveA: 11000,
+        reserveB: 1000,
+        tvl: 22000,
+        fee: 0.003,
+        decimalsA: 6,
+        decimalsB: 9,
+      };
+
+      const amountIn = 1000;
+      const result = simulateTwoHopArbitrage(buyPoolRev, sellPoolRev, amountIn, 'QUOTE');
+
+      // Should be similar result to the previous test as math is same, just tokens swapped
+      expect(result.amountOut).toBeGreaterThan(0);
+      expect(result.amountOut).toBeLessThan(1100);
+    });
   });
 
   describe('isProfitable', () => {

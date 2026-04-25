@@ -2,10 +2,8 @@
 // src/index.ts
 
 import { Command } from 'commander';
-import { config } from 'dotenv';
 import { logger } from './logger/logger';
-
-config();
+import { loadConfig, Config } from './config';
 
 const program = new Command();
 
@@ -24,87 +22,54 @@ program
 program
   .command('monitor [mintA] [mintB]')
   .description('Start monitoring arbitrage opportunities')
-  .option('--mint-a <address>', 'Token A mint address', process.env.MINT_A)
-  .option('--mint-b <address>', 'Token B mint address', process.env.MINT_B)
-  .option('--rpc <url>', 'Solana RPC URL', process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com')
-  .option('--quote <address>', 'Quote token mint address (default: mint-b)', process.env.QUOTE_MINT)
-  .option(
-    '--interval <ms>',
-    'Polling interval in ms (min: 500)',
-    (v: string) => {
-      const n = parseInt(v, 10);
-      if (isNaN(n) || n < 500) throw new Error('--interval must be a number >= 500');
-      return n;
-    },
-    parseInt(process.env.POLLING_INTERVAL_MS ?? '2000', 10),
-  )
-  .option(
-    '--min-profit <number>',
-    'Minimum net profit threshold in quote token',
-    (v: string) => {
-      const n = parseFloat(v);
-      if (isNaN(n) || n < 0) throw new Error('--min-profit must be a non-negative number');
-      return n;
-    },
-    parseFloat(process.env.MIN_PROFIT_THRESHOLD ?? '0.01'),
-  )
-  .option(
-    '--trade-size <number>',
-    'Simulated trade size in quote token',
-    (v: string) => {
-      const n = parseFloat(v);
-      if (isNaN(n) || n <= 0) throw new Error('--trade-size must be a positive number');
-      return n;
-    },
-    parseFloat(process.env.TRADE_SIZE ?? '100'),
-  )
-  .option('--log-level <level>', 'Log level (error|warn|info|debug)', process.env.LOG_LEVEL ?? 'info')
+  .option('--mint-a <address>', 'Token A mint address')
+  .option('--mint-b <address>', 'Token B mint address')
+  .option('--rpc <url>', 'Solana RPC URL')
+  .option('--quote <address>', 'Quote token mint address (default: mint-b)')
+  .option('--interval <ms>', 'Polling interval in ms (min: 500)', (v) => parseInt(v, 10))
+  .option('--min-profit <number>', 'Minimum net profit threshold', (v) => parseFloat(v))
+  .option('--trade-size <number>', 'Simulated trade size', (v) => parseFloat(v))
+  .option('--log-level <level>', 'Log level (error|warn|info|debug)')
   .action(async (positionalMintA, positionalMintB, options) => {
-    // Resolve mints: positional args > --mint-a/--mint-b flags > .env > schema defaults
-    const mintA: string | undefined =
-      (typeof positionalMintA === 'string' && positionalMintA) ? positionalMintA
-        : options.mintA
-        ?? process.env.MINT_A;
+    try {
+      // Map CLI options to Config keys
+      const cliOverrides: Partial<Config> = {
+        rpcUrl: options.rpc,
+        mintA: positionalMintA || options.mintA,
+        mintB: positionalMintB || options.mintB,
+        quoteMint: options.quote,
+        pollingIntervalMs: options.interval,
+        minProfitThreshold: options.minProfit,
+        tradeSize: options.tradeSize,
+        logLevel: options.logLevel,
+      };
 
-    const mintB: string | undefined =
-      (typeof positionalMintB === 'string' && positionalMintB) ? positionalMintB
-        : options.mintB
-        ?? process.env.MINT_B;
-
-    if (!mintA || !mintB) {
-      logger.error(
-        'Missing required mint addresses. ' +
-        'Provide them as positional args, --mint-a/--mint-b flags, or MINT_A/MINT_B env vars.\n' +
-        '  Example: npm run start -- monitor So11111111111111111111111111111111111111112 EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+      // Filter out undefined to allow .env/defaults to take over
+      const cleanOverrides = Object.fromEntries(
+        Object.entries(cliOverrides).filter(([, v]) => v !== undefined)
       );
+
+      // Centralized loading and validation
+      const finalConfig = loadConfig(cleanOverrides);
+
+      // Lazy import — speeds up --help and argument validation
+      const { startMonitor } = await import('./core/orchestrator');
+
+      logger.info('Starting arbitrage monitor', {
+        rpcUrl: finalConfig.rpcUrl.replace(/\/\/.*@/, '//***@'),
+        mintA: finalConfig.mintA,
+        mintB: finalConfig.mintB,
+        quoteMint: finalConfig.quoteMint,
+        intervalMs: finalConfig.pollingIntervalMs,
+        minProfit: finalConfig.minProfitThreshold,
+        tradeSize: finalConfig.tradeSize,
+      });
+
+      await startMonitor(finalConfig);
+    } catch (error) {
+      logger.error('Startup failed', { error: (error as Error).message });
       process.exit(1);
     }
-
-    // Lazy import — speeds up --help and argument validation
-    const { startMonitor } = await import('./core/orchestrator');
-
-    logger.info('Starting arbitrage monitor', {
-      rpcUrl: options.rpc.replace(/\/\/.*@/, '//***@'),
-      mintA,
-      mintB,
-      quoteMint: options.quote ?? mintB,
-      intervalMs: options.interval,
-      minProfit: options.minProfit,
-      tradeSize: options.tradeSize,
-    });
-
-    await startMonitor({
-      rpcUrl: options.rpc,
-      mintA,
-      mintB,
-      quoteMint: options.quote ?? mintB,
-      pollingIntervalMs: options.interval,
-      minProfitThreshold: options.minProfit,
-      tradeSize: options.tradeSize,
-      maxSlippagePercent: parseFloat(process.env.MAX_SLIPPAGE_PERCENT ?? '0.05'),
-      txCostInQuote: parseFloat(process.env.TX_COST_IN_QUOTE ?? '0.0002'),
-      logLevel: options.logLevel,
-    });
   });
 
 // Show help if no command is provided

@@ -125,15 +125,15 @@ function evaluateDirection(
   if (!isSamePair(buyPool, sellPool)) return null;
 
   // Trade size validation for both pools
-  const buyCheck = validateTradeSize(buyPool, config.tradeSize);
-  const sellCheck = validateTradeSize(sellPool, config.tradeSize);
+  const buyCheck = validateTradeSize(buyPool, config.tradeSize, 0.1, config.quoteMint);
+  const sellCheck = validateTradeSize(sellPool, config.tradeSize, 0.1, config.quoteMint);
 
   if (!buyCheck.isValid || !sellCheck.isValid) return null;
 
   // Simulation
   let result: ReturnType<typeof simulateTwoHopArbitrage>;
   try {
-    result = simulateTwoHopArbitrage(buyPool, sellPool, config.tradeSize);
+    result = simulateTwoHopArbitrage(buyPool, sellPool, config.tradeSize, config.quoteMint);
   } catch {
     // Math error (e.g. overflow) — skip pair
     return null;
