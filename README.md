@@ -2,7 +2,11 @@
 
 A real-time, open-source arbitrage monitoring tool for Raydium CPMM pools on the Solana blockchain. This tool continuously scans multiple liquidity pools for a specific token pair, detects price discrepancies, and calculates the precise net profit of executing a two-hop arbitrage trade.
 
-Built for the **Superteam Ukraine** bounty.
+## 🇺🇦 Superteam Ukraine Bounty
+
+This project was developed as a submission for the [Superteam Ukraine Raydium CPMM Arbitrage Monitor](https://superteam.fun/earn/listing/create-an-open-source-real-time-arbitrage-monitoring-tool-for-raydium-cpmm/) bounty. 
+
+[Superteam Ukraine](https://ua.superteam.fun/) is a community of builders, designers, and marketers working in the Solana ecosystem within Ukraine. They provide opportunities for developers to contribute to the ecosystem through bounties, grants, and fellowship programs.
 
 ## 🏗 Architecture Overview
 
@@ -69,15 +73,26 @@ The application is configured primarily through the `.env` file. Below are all s
 
 ## 💻 Usage
 
-To run the application using configuration from your `.env` file:
+The tool can be configured via `.env` or direct CLI arguments. For a detailed step-by-step guide, see [**USAGE.md**](./USAGE.md).
+
+### Quick Start (CLI mode)
 ```bash
-npm run dev     # development mode
-npm run start   # production mode
+# General syntax:
+npm run start -- monitor [MINT_A] [MINT_B] [OPTIONS]
+
+# Example: SOL/USDC arbitrage with $1000 trade size
+npm run start -- monitor \
+  So11111111111111111111111111111111111111112 \
+  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v \
+  --trade-size 1000 \
+  --min-profit 0.1
 ```
 
-You can also override configuration or run the tool entirely via CLI arguments (using positional arguments for the token pair):
+### Background Mode (Env mode)
 ```bash
-npm run start -- monitor So11111111111111111111111111111111111111112 EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v --min-profit 0.001 --trade-size 1000
+# 1. Edit .env with your MINT_A, MINT_B and RPC_URL
+# 2. Run:
+npm run start -- monitor
 ```
 
 ### Sample Output
@@ -141,6 +156,52 @@ amountOut = (amountInWithFee * reserveOut) / (reserveIn + amountInWithFee)
    Slippage = (ActualAmountOut - ExpectedOut) / ExpectedOut
    ```
    *Negative slippage indicates you are receiving less than the spot price, which is normal behavior in CPMMs.*
+
+## 🛠 How to Extend
+
+This project is designed with a modular architecture, making it easy to add new features.
+
+### 1. Adding a New DEX (e.g., Meteora or Orca)
+1.  Create a new discovery script in `src/solana/` (e.g., `orcaDiscovery.ts`).
+2.  Implement the `RawPool` interface in your new module.
+3.  Update the `PoolService` in `src/services/poolService.ts` to include the new discovery logic.
+4.  Since `core/` logic is DEX-agnostic, the arbitrage math will work automatically.
+
+### 2. Custom Logger Adapter
+1.  Modify `src/logger/logger.ts` to add a new transport (e.g., Telegram, Discord, or a remote database).
+2.  Use the `logOpportunity` function to trigger alerts when a profitable trade is found.
+
+### 3. New Arbitrage Strategies
+1.  Explore `src/core/arbitrage.ts` to implement multi-hop routes (3 or more pools) or triangular arbitrage.
+2.  Add new simulation functions in `src/core/pricing.ts`.
+
+## 🚨 Troubleshooting & Error Cases
+
+The application is built to be resilient and handle common Solana network errors gracefully.
+
+### 1. RPC Connection Issues / Rate Limits
+**Symptom:** `RPC attempt X/3 failed` or `RPC health check failed`
+**Resolution:** The application uses exponential backoff to automatically retry failed requests. If you are consistently hitting rate limits on public RPC nodes (e.g. `api.mainnet-beta.solana.com`), it is highly recommended to switch to a dedicated private RPC provider like Helius, QuickNode, or Alchemy. The orchestrator will not crash; it will skip the current polling cycle and retry on the next tick.
+
+### 2. Invalid or Unsupported Token Mints
+**Symptom:** `No CPMM pools found` or `Invalid public key input`
+**Resolution:** Verify that the provided token mint addresses are valid Base58 strings and that Raydium CPMM pools actually exist for this token pair. The tool requires at least **two** active pools for the same pair to simulate an arbitrage route.
+
+### 3. Pools Data Disappeared
+**Symptom:** `All pools disappeared, re-discovering...`
+**Resolution:** This can occur if the RPC node returns empty data for pool accounts during a polling cycle. The orchestrator handles this by automatically clearing its cache and attempting to rediscover the pools from scratch.
+
+### 4. Empty Arbitrage Table
+**Symptom:** The tool runs successfully but says `⏳ No profitable opportunities found`.
+**Resolution:** This means there are currently no price discrepancies large enough to overcome the pool fees and transaction costs. You can test the rendering logic by temporarily lowering `--min-profit` (e.g., `--min-profit -1`) to see unprofitable routes.
+
+## ⚠️ Disclaimer
+
+**This tool is a Monitor, not a Trading Bot.**
+
+* **No Execution:** This software does **not** have the capability to execute trades or send transactions to the Solana blockchain. It only simulates and monitors price discrepancies.
+* **No Private Keys:** The application does not require and will never ask for your private keys or seed phrases.
+* **Educational Purpose:** This tool is provided for educational and monitoring purposes only. Use it at your own risk. The authors are not responsible for any financial decisions or losses incurred based on the data provided by this tool.
 
 ## License
 MIT
