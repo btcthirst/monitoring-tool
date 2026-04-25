@@ -8,7 +8,7 @@
  */
 
 import { PublicKey, AccountInfo, Connection } from '@solana/web3.js';
-import { CpmmPoolInfoLayout, ApiV3PoolInfoStandardItemCpmm } from '@raydium-io/raydium-sdk-v2';
+import { CpmmPoolInfoLayout, CpmmConfigInfoLayout, ApiV3PoolInfoStandardItemCpmm } from '@raydium-io/raydium-sdk-v2';
 import { RawPool } from '../core/types';
 import { logger } from '../logger/logger';
 import {
@@ -183,26 +183,17 @@ export function buildRawPool(
  */
 export function parseAmmConfigFee(accountInfo: AccountInfo<Buffer>): number {
   try {
-    // AmmConfig layout: discriminator(8) + bump(1) + ... + tradeFeeRate(u64 @ offset 12)
-    if (accountInfo.data.length < 20) return DEFAULT_FEE_BPS;
-    const feeRateRaw = accountInfo.data.readBigUInt64LE(12);
-    // feeRate units: 1e-6, convert to bps (1e-4)
-    // bps = feeRate / 1_000_000 * 10_000 = feeRate / 100
+    const decoded = CpmmConfigInfoLayout.decode(accountInfo.data);
+    const feeRateRaw = BigInt(decoded.tradeFeeRate.toString());
+    
+    // feeRate units: 1e-6 (e.g. 2500 -> 0.0025)
+    // convert to bps (1e-4): bps = feeRate / 100
     const feeBps = Number(feeRateRaw / 100n);
     return feeBps > 0 ? feeBps : DEFAULT_FEE_BPS;
-  } catch {
+  } catch (error) {
+    logger.debug('Failed to parse AmmConfig fee via SDK, using default', {
+      error: error instanceof Error ? error.message : String(error),
+    });
     return DEFAULT_FEE_BPS;
   }
-}
-
-// ---------------------------------------------------------------------------
-// Validation
-// ---------------------------------------------------------------------------
-
-export function isValidCpmmPoolAccount(accountInfo: AccountInfo<Buffer>): boolean {
-  return (
-    !accountInfo.executable &&
-    accountInfo.owner.equals(RAYDIUM_CPMM_PROGRAM_ID) &&
-    accountInfo.data.length >= CPMM_POOL_ACCOUNT_SIZE
-  );
 }

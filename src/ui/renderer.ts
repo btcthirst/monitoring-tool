@@ -23,6 +23,7 @@ import {
   formatKeyValue,
   formatRelativeTime,
   padVisible,
+  formatCurrency,
 } from './formatters';
 import { formatDuration } from '../utils/time';
 
@@ -33,6 +34,7 @@ import { formatDuration } from '../utils/time';
 export interface RenderOptions {
   minProfit: number;
   quoteMint: string;
+  quoteSymbol: string;
   pollingIntervalMs: number;
   tradeSize: number;
   showSlippage?: boolean;
@@ -110,8 +112,8 @@ export class Renderer {
     console.log(chalk.bold.cyan('\n🔍 Solana Arbitrage Monitor') + chalk.gray(' — Raydium CPMM'));
     console.log(formatSeparator());
     console.log(
-      formatKeyValue('Trade size:', formatTradeSize(options.tradeSize, 'USDC')) + '   ' +
-      formatKeyValue('Min profit:', chalk.yellow(formatNumber(options.minProfit, 6))) + '   ' +
+      formatKeyValue('Trade size:', formatTradeSize(options.tradeSize, options.quoteSymbol)) + '   ' +
+      formatKeyValue('Min profit:', chalk.yellow(`${formatNumber(options.minProfit, 6)} ${options.quoteSymbol}`)) + '   ' +
       formatKeyValue('Interval:', chalk.yellow(formatDuration(options.pollingIntervalMs))),
     );
     console.log(formatSeparator());
@@ -135,8 +137,9 @@ export class Renderer {
         chalk.cyan('Gross'),
         chalk.cyan('Slippage'),
         chalk.cyan('Fee'),
+        chalk.cyan('TVL (B/S)'),
       ],
-      colWidths: [14, 14, 14, 11, 14, 12, 8],
+      colWidths: [14, 14, 14, 11, 14, 12, 8, 16],
       style: { head: [], border: [], compact: false },
       chars: {
         top: '═', 'top-mid': '╤', 'top-left': '╔', 'top-right': '╗',
@@ -154,9 +157,10 @@ export class Renderer {
         chalk.magenta(formatAddress(opp.sellPool.address, 4, 4)),
         formatProfit(opp.netProfit),
         formatPercent(opp.profitPercent, true, 3),
-        chalk.white(`${formatNumber(opp.grossProfit, 6)} USDC`),
+        chalk.white(formatCurrency(opp.grossProfit, options.quoteSymbol, 6)),
         formatSlippage(avgSlippage),
         formatFee(opp.buyPool.fee),
+        chalk.gray(`${formatCurrency(opp.buyPool.tvl, options.quoteSymbol, 0)} / ${formatCurrency(opp.sellPool.tvl, options.quoteSymbol, 0)}`),
       ]);
     }
 
@@ -187,16 +191,20 @@ export class Renderer {
     console.log(formatSeparator('─'));
 
     console.log(
-      `  ${formatKeyValue('Amount in:', chalk.white(formatNumber(opp.amountIn, 2) + ' USDC'), 12)}` +
-      `  ${formatKeyValue('Amount out:', chalk.white(formatNumber(opp.amountOut, 6) + ' USDC'), 12)}`,
+      `  ${formatKeyValue('Amount in:', chalk.white(formatCurrency(opp.amountIn, options.quoteSymbol, 2)), 12)}` +
+      `  ${formatKeyValue('Amount out:', chalk.white(formatCurrency(opp.amountOut, options.quoteSymbol, 6)), 12)}`,
     );
     console.log(
-      `  ${formatKeyValue('Gross:', chalk.white(formatNumber(opp.grossProfit, 6) + ' USDC'), 12)}` +
-      `  ${formatKeyValue('Tx cost:', chalk.gray(formatNumber(opp.txCost, 6) + ' USDC'), 12)}`,
+      `  ${formatKeyValue('Gross:', chalk.white(formatCurrency(opp.grossProfit, options.quoteSymbol, 6)), 12)}` +
+      `  ${formatKeyValue('Tx cost:', chalk.gray(formatCurrency(opp.txCost, options.quoteSymbol, 6)), 12)}`,
     );
     console.log(
-      `  ${formatKeyValue('Net profit:', chalk.green.bold(formatNumber(opp.netProfit, 6) + ' USDC'), 12)}` +
+      `  ${formatKeyValue('Net profit:', chalk.green.bold(formatCurrency(opp.netProfit, options.quoteSymbol, 6)), 12)}` +
       `  ${formatKeyValue('Profit %:', formatPercent(opp.profitPercent, true, 4), 12)}`,
+    );
+    console.log(
+      `  ${formatKeyValue('Buy TVL:', chalk.gray(formatCurrency(opp.buyPool.tvl, options.quoteSymbol, 0)), 12)}` +
+      `  ${formatKeyValue('Sell TVL:', chalk.gray(formatCurrency(opp.sellPool.tvl, options.quoteSymbol, 0)), 12)}`,
     );
     console.log(
       `  ${formatKeyValue('Slip buy:', formatSlippage(opp.slippageBuy), 12)}` +
@@ -227,36 +235,9 @@ export class Renderer {
 
     console.log(chalk.gray(
       `\n  Legend: ${chalk.cyan('buy pool')}  ${chalk.magenta('sell pool')}` +
-      `  ${chalk.green('profit > 0')}  ${chalk.yellow('slippage warn')}  ${chalk.red('high slippage')}`,
+      `  ${chalk.green('profit > 0')}  ${chalk.yellow('slippage warn')}  ${chalk.red('high slippage')}` +
+      `  ${chalk.gray(`TVL in ${options.quoteSymbol} equiv.`)}`,
     ));
     console.log(chalk.gray(`\n  Press ${chalk.white('Ctrl+C')} to exit`));
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Simplified Renderer (one line, no screen clearing)
-// ---------------------------------------------------------------------------
-
-/**
- * SimpleRenderer — for quiet mode or redirecting stdout to a file.
- * Activated via --simple flag (future feature).
- */
-export class SimpleRenderer {
-  render(opportunities: Opportunity[], options: RenderOptions): void {
-    const time = new Date().toLocaleTimeString();
-
-    if (opportunities.length === 0) {
-      process.stdout.write(`\r⏳ No opportunities | ${time}     `);
-      return;
-    }
-
-    const best = opportunities[0]!;
-    process.stdout.write(
-      `\r💰 Best: ${formatNumber(best.netProfit, 6)} USDC` +
-      ` (${best.profitPercent.toFixed(3)}%)` +
-      ` | buy: ${formatAddress(best.buyPool.address)}` +
-      ` sell: ${formatAddress(best.sellPool.address)}` +
-      ` | ${time}     `,
-    );
   }
 }

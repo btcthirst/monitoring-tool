@@ -36,6 +36,8 @@ export type NormalizedPool = {
   reserveA: number;
   /** Reserve of token B in normalized units */
   reserveB: number;
+  /** Estimated TVL in quote units */
+  tvl: number;
   /** Fee as decimal (0.0025 = 0.25%) */
   fee: number;
   decimalsA: number;

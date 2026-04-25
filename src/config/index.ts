@@ -98,23 +98,7 @@ export function loadConfig(cliOverrides?: Partial<Config>): Config {
   }
 }
 
-/**
- * Get cached configuration (singleton).
- * If config is not loaded yet — loads from env + defaults.
- */
-export function getConfig(): Config {
-  if (!cachedConfig) {
-    cachedConfig = loadConfig();
-  }
-  return cachedConfig;
-}
 
-/**
- * Reset cache (used in tests).
- */
-export function resetConfig(): void {
-  cachedConfig = null;
-}
 
 // Re-export types so consumers don't import directly from schema
 export { ConfigSchema, type Config, DEFAULT_VALUES } from './schema';

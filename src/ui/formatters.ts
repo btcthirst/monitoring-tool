@@ -12,6 +12,37 @@ import chalk from 'chalk';
 import { formatNumber as mathFormatNumber } from '../utils/math';
 
 // ---------------------------------------------------------------------------
+// Known Mints & Symbols
+// ---------------------------------------------------------------------------
+
+const KNOWN_SYMBOLS: Record<string, string> = {
+  'So11111111111111111111111111111111111111112': 'SOL',
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v': 'USDC',
+  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB': 'USDT',
+  'mSoLzYSa7mS51vg9UZyfecnmojS3S9cmM9K6MtvPZzY': 'mSOL',
+  'jtoSjKiZxTZCFP2SbsCcS9ESGrVkS8AnS4tXN3J46b2': 'JTO',
+};
+
+/**
+ * Get symbol for a mint address or abbreviated address if unknown.
+ */
+export function resolveSymbol(mint: string): string {
+  return KNOWN_SYMBOLS[mint] || formatAddress(mint, 4, 4);
+}
+
+/**
+ * Format amount with currency symbol or prefix.
+ * Uses $ for USDC/USDT, otherwise appends symbol as suffix.
+ */
+export function formatCurrency(amount: number, symbol: string, decimals = 2): string {
+  const formatted = formatNumber(amount, decimals);
+  if (symbol === 'USDC' || symbol === 'USDT') {
+    return `$${formatted}`;
+  }
+  return `${formatted} ${symbol}`;
+}
+
+// ---------------------------------------------------------------------------
 // Addresses
 // ---------------------------------------------------------------------------
 
@@ -28,9 +59,6 @@ export function formatAddress(
   return `${address.slice(0, startLength)}...${address.slice(-endLength)}`;
 }
 
-export function formatAddressColored(address: string, startLength = 4, endLength = 4): string {
-  return chalk.cyan(formatAddress(address, startLength, endLength));
-}
 
 // ---------------------------------------------------------------------------
 // Numbers
@@ -48,15 +76,6 @@ export function formatNumber(
   return mathFormatNumber(value, decimals, stripZeros);
 }
 
-/**
- * Abbreviate large numbers (K / M / B).
- */
-export function formatAbbreviated(value: number): string {
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`;
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;
-  if (value >= 1_000) return `${(value / 1_000).toFixed(2)}K`;
-  return formatNumber(value, 2);
-}
 
 // ---------------------------------------------------------------------------
 // Profit and percentages
@@ -108,15 +127,8 @@ export function formatFee(fee: number): string {
   return chalk.gray(`${(fee * 100).toFixed(2)}%`);
 }
 
-// ---------------------------------------------------------------------------
-// Price and trade size
-// ---------------------------------------------------------------------------
 
-export function formatPrice(price: number, quoteSymbol = 'USDC', decimals = 6): string {
-  return `${formatNumber(price, decimals)} ${quoteSymbol}`;
-}
-
-export function formatTradeSize(size: number, quoteSymbol = 'USDC'): string {
+export function formatTradeSize(size: number, quoteSymbol: string): string {
   return chalk.cyan(`${formatNumber(size, 2)} ${quoteSymbol}`);
 }
 
@@ -160,22 +172,6 @@ export function formatKeyValue(key: string, value: string, keyWidth = 16): strin
   return `${chalk.gray(key.padEnd(keyWidth))} ${value}`;
 }
 
-/**
- * Status with icon.
- */
-export function formatStatus(
-  status: 'success' | 'error' | 'warning' | 'info',
-  message: string,
-): string {
-  const icons = { success: '✅', error: '❌', warning: '⚠️ ', info: 'ℹ️ ' };
-  const colors = {
-    success: chalk.green,
-    error: chalk.red,
-    warning: chalk.yellow,
-    info: chalk.blue,
-  };
-  return `${icons[status]} ${colors[status](message)}`;
-}
 
 /**
  * String length without ANSI escape codes (for proper padding).

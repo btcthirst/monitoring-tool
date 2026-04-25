@@ -157,6 +157,15 @@ amountOut = (amountInWithFee * reserveOut) / (reserveIn + amountInWithFee)
    ```
    *Negative slippage indicates you are receiving less than the spot price, which is normal behavior in CPMMs.*
 
+4. **Estimated TVL**: Calculated as twice the reserve of the quote token.
+   ```
+   Estimated TVL = ReserveQuote * 2
+   ```
+   *This is an approximation based on the CPMM property where both sides of a pool are balanced in value. It provides a reliable liquidity context without requiring external price oracles.*
+
+> [!IMPORTANT]
+> **Low Liquidity Warning**: Pools with very low TVL (< $1,000) may show unrealistically high profit percentages due to extreme price impact for even small trades. Always verify pool liquidity before acting on a signal.
+
 ## 🛠 How to Extend
 
 This project is designed with a modular architecture, making it easy to add new features.

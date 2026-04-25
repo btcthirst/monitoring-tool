@@ -1,6 +1,5 @@
 import {
   normalizeAmount,
-  denormalizeAmount,
   getAmountOut,
   simulateTwoHopArbitrage,
   isProfitable,
@@ -22,13 +21,6 @@ describe('pricing.ts', () => {
     });
   });
 
-  describe('denormalizeAmount', () => {
-    it('should correctly denormalize number to bigint', () => {
-      expect(denormalizeAmount(1, 6)).toBe(1000000n);
-      expect(denormalizeAmount(1.5, 6)).toBe(1500000n);
-      expect(denormalizeAmount(1.234567, 6)).toBe(1234567n);
-    });
-  });
 
   describe('getAmountOut', () => {
     it('should return correct output for standard CPMM', () => {
@@ -61,6 +53,7 @@ describe('pricing.ts', () => {
       tokenB: 'QUOTE',
       reserveA: 1000, // BASE
       reserveB: 10000, // QUOTE
+      tvl: 20000,
       fee: 0.003,
       decimalsA: 9,
       decimalsB: 6,
@@ -72,6 +65,7 @@ describe('pricing.ts', () => {
       tokenB: 'QUOTE',
       reserveA: 1000,
       reserveB: 11000, // Higher price here
+      tvl: 22000,
       fee: 0.003,
       decimalsA: 9,
       decimalsB: 6,

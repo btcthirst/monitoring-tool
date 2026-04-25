@@ -38,9 +38,9 @@ describe('arbitrage logic', () => {
 
   describe('isSamePair', () => {
     it('should identify same pairs regardless of order', () => {
-      const p1 = { tokenA: 'X', tokenB: 'Y' } as NormalizedPool;
-      const p2 = { tokenA: 'Y', tokenB: 'X' } as NormalizedPool;
-      const p3 = { tokenA: 'X', tokenB: 'Z' } as NormalizedPool;
+      const p1 = { tokenA: 'X', tokenB: 'Y', tvl: 0 } as NormalizedPool;
+      const p2 = { tokenA: 'Y', tokenB: 'X', tvl: 0 } as NormalizedPool;
+      const p3 = { tokenA: 'X', tokenB: 'Z', tvl: 0 } as NormalizedPool;
 
       expect(isSamePair(p1, p2)).toBe(true);
       expect(isSamePair(p1, p3)).toBe(false);

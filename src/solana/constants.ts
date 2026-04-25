@@ -20,20 +20,6 @@ export const RAYDIUM_CPMM_PROGRAM_ID = new PublicKey(
 );
 
 // ---------------------------------------------------------------------------
-// Seeds for PDA Derivation
-// ---------------------------------------------------------------------------
-
-/**
- * Seeds verified against:
- * raydium-io/raydium-cp-swap/programs/cp-swap/src/states/pool.rs
- */
-export const POOL_SEED = 'pool';
-export const POOL_LP_MINT_SEED = 'pool_lp_mint';
-export const POOL_VAULT_SEED = 'pool_vault';
-export const OBSERVATION_SEED = 'observation';
-export const AMM_CONFIG_SEED = 'amm_config';
-
-// ---------------------------------------------------------------------------
 // Account Sizes (for dataSize filter in getProgramAccounts)
 // ---------------------------------------------------------------------------
 
@@ -78,14 +64,3 @@ export const RPC_RETRY_DELAY_MS = 1000;
 
 /** Balance offset in SPL Token account (for direct reading if necessary) */
 export const SPL_TOKEN_AMOUNT_OFFSET = 64;
-
-// ---------------------------------------------------------------------------
-// Known Mint Addresses
-// ---------------------------------------------------------------------------
-
-export const KNOWN_MINTS = {
-  WSOL: 'So11111111111111111111111111111111111111112',
-  USDC: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
-  USDT: 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
-  RAY: '4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R',
-} as const;

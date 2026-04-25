@@ -18,6 +18,7 @@ import { RawPool, ArbitrageConfig, Opportunity } from './types';
 import { Renderer } from '../ui/renderer';
 import { logger, setLogLevel, logError, logOpportunity } from '../logger/logger';
 import { PerformanceTimer, PeriodicExecutor } from '../utils/time';
+import { resolveSymbol } from '../ui/formatters';
 import { formatNumber } from '../utils/math';
 
 // ---------------------------------------------------------------------------
@@ -58,6 +59,8 @@ export class ArbitrageOrchestrator {
   private readonly mintB: string;
   private readonly pollingIntervalMs: number;
 
+  private readonly quoteSymbol: string;
+
   private executor: PeriodicExecutor | null = null;
   private rawPools: RawPool[] = [];
   private lastOpportunities: Opportunity[] = [];
@@ -82,6 +85,7 @@ export class ArbitrageOrchestrator {
       txCostInQuote: config.txCostInQuote,
       quoteMint: config.quoteMint,
     };
+    this.quoteSymbol = resolveSymbol(config.quoteMint);
 
     this.rpcClient = new SolanaRpcClient(config.rpcUrl);
     this.renderer = new Renderer();
@@ -199,7 +203,11 @@ export class ArbitrageOrchestrator {
       return;
     }
 
-    await this.refreshPoolData();
+    const refreshed = await this.refreshPoolData();
+    if (!refreshed) {
+      logger.warn('Failed to refresh pool data, skipping render');
+      return;
+    }
 
     if (this.rawPools.length < 2) {
       logger.warn('Less than 2 pools available, skipping arbitrage search');
@@ -214,9 +222,11 @@ export class ArbitrageOrchestrator {
     this.state.totalOpportunities += opportunities.length;
     this.state.lastUpdateTime = Date.now();
 
+    // Only render if we have updated data to show
     this.renderer.render(topOpps, {
       minProfit: this.config.minProfit,
       quoteMint: this.config.quoteMint,
+      quoteSymbol: this.quoteSymbol,
       pollingIntervalMs: this.pollingIntervalMs,
       tradeSize: this.config.tradeSize,
     });
@@ -249,10 +259,9 @@ export class ArbitrageOrchestrator {
   // SDK Reserve Updates
   // ---------------------------------------------------------------------------
 
-  private async refreshPoolData(): Promise<void> {
+  private async refreshPoolData(): Promise<boolean> {
     if (this.rawPools.length === 0) {
-      await this.discoverPools();
-      return;
+      return await this.discoverPools();
     }
 
     // Gather pool addresses to fetch updated PoolState
@@ -280,8 +289,7 @@ export class ArbitrageOrchestrator {
 
     if (decodedPools.length === 0) {
       logger.warn('All pools disappeared, re-discovering...');
-      await this.discoverPools();
-      return;
+      return await this.discoverPools();
     }
 
     // Batch request: vault balances + configId fee
@@ -329,6 +337,8 @@ export class ArbitrageOrchestrator {
     logger.debug('Pool data refreshed', {
       total: this.rawPools.length,
     });
+
+    return updatedPools.length > 0;
   }
 
   // ---------------------------------------------------------------------------

@@ -74,7 +74,7 @@ export function findArbitrageOpportunities(
   if (rawPools.length < 2) return [];
 
   // Step 1: normalization
-  const pools: NormalizedPool[] = rawPools.map(normalizePool);
+  const pools: NormalizedPool[] = rawPools.map((p) => normalizePool(p, config.quoteMint));
 
   // Step 2: grouping by pair
   const byPair = new Map<string, NormalizedPool[]>();
@@ -184,28 +184,7 @@ export function getTopOpportunities(opportunities: Opportunity[], limit: number)
   return opportunities.slice(0, limit);
 }
 
-/**
- * Filter by minimum profit percentage.
- */
-export function filterByProfitPercent(
-  opportunities: Opportunity[],
-  minPercent: number,
-): Opportunity[] {
-  return opportunities.filter((o) => o.profitPercent >= minPercent);
-}
 
-/**
- * Group opportunities by buy pool address.
- */
-export function groupByBuyPool(opportunities: Opportunity[]): Map<string, Opportunity[]> {
-  const grouped = new Map<string, Opportunity[]>();
-  for (const opp of opportunities) {
-    const group = grouped.get(opp.buyPool.address) ?? [];
-    group.push(opp);
-    grouped.set(opp.buyPool.address, group);
-  }
-  return grouped;
-}
 
 /**
  * Aggregated statistics for a set of opportunities.

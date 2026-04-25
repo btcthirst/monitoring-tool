@@ -1,16 +1,15 @@
 import {
   formatAddress,
-  formatAbbreviated,
   formatProfit,
   formatPercent,
   formatSlippage,
   formatFee,
-  formatPrice,
   formatTradeSize,
   formatRelativeTime,
   formatSeparator,
   formatKeyValue,
-  formatStatus,
+  resolveSymbol,
+  formatCurrency,
   visibleLength,
   padVisible,
 } from '../formatters';
@@ -27,12 +26,14 @@ describe('ui formatters', () => {
     });
   });
 
-  describe('numbers', () => {
-    it('should abbreviate large numbers', () => {
-      expect(formatAbbreviated(1500)).toBe('1.50K');
-      expect(formatAbbreviated(1500000)).toBe('1.50M');
-      expect(formatAbbreviated(1500000000)).toBe('1.50B');
-      expect(formatAbbreviated(123)).toBe('123');
+  describe('resolveSymbol', () => {
+    it('should resolve known mints', () => {
+      expect(resolveSymbol('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v')).toBe('USDC');
+      expect(resolveSymbol('So11111111111111111111111111111111111111112')).toBe('SOL');
+    });
+
+    it('should return abbreviated address for unknown mints', () => {
+      expect(resolveSymbol('11111111111111111111111111111111')).toBe('1111...1111');
     });
   });
 
@@ -60,13 +61,9 @@ describe('ui formatters', () => {
     });
   });
 
-  describe('price and trade size', () => {
-    it('should format price with symbol', () => {
-      expect(formatPrice(100, 'USDC')).toBe('100 USDC');
-    });
-
-    it('should format trade size', () => {
-      expect(formatTradeSize(1000)).toContain('1000 USDC');
+  describe('trade size', () => {
+    it('should format trade size with given symbol', () => {
+      expect(formatTradeSize(1000, 'SOL')).toContain('1000 SOL');
     });
   });
 
@@ -92,12 +89,6 @@ describe('ui formatters', () => {
       expect(formatted).toContain('Value');
       expect(visibleLength(formatted)).toBe(5 + 1 + 5); // keyWidth + space + value.length
     });
-
-    it('should format status', () => {
-      expect(formatStatus('success', 'Done')).toContain('✅');
-      expect(formatStatus('success', 'Done')).toContain('Done');
-      expect(formatStatus('error', 'Fail')).toContain('❌');
-    });
   });
 
   describe('ANSI handling', () => {
@@ -111,6 +102,15 @@ describe('ui formatters', () => {
       const padded = padVisible(colored, 5);
       expect(visibleLength(padded)).toBe(5);
       expect(padded.endsWith('   ')).toBe(true);
+    });
+
+    it('should format currency with $ for USDC/USDT', () => {
+      expect(formatCurrency(100, 'USDC')).toContain('$100');
+      expect(formatCurrency(100, 'USDT')).toContain('$100');
+    });
+
+    it('should format currency with suffix for other tokens', () => {
+      expect(formatCurrency(100, 'SOL')).toContain('100 SOL');
     });
   });
 });

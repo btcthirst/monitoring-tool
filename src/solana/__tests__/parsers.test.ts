@@ -3,7 +3,6 @@ import {
   isSwapEnabled, 
   readVaultBalance, 
   parseAmmConfigFee, 
-  isValidCpmmPoolAccount,
   buildRawPool
 } from '../parsers';
 import { RAYDIUM_CPMM_PROGRAM_ID, CPMM_POOL_ACCOUNT_SIZE, SPL_TOKEN_AMOUNT_OFFSET } from '../constants';
@@ -48,41 +47,25 @@ describe('parsers.ts', () => {
   });
 
   describe('parseAmmConfigFee', () => {
-    it('should correctly parse fee rate from offset 12', () => {
-      const data = Buffer.alloc(20);
+    it('should correctly parse fee rate using SDK layout', () => {
+      // CpmmConfigInfoLayout expects a larger buffer (approx 236 bytes)
+      const data = Buffer.alloc(300); 
       const feeRateRaw = 2500n; // 0.25% = 25 bps
+      // tradeFeeRate is at offset 12 in the current layout
       data.writeBigUInt64LE(feeRateRaw, 12);
       
       const accountInfo = { data } as any;
       expect(parseAmmConfigFee(accountInfo)).toBe(25);
     });
 
-    it('should return default fee if buffer too small', () => {
-      const data = Buffer.alloc(19);
+    it('should return default fee if decoding fails', () => {
+      // Buffer too small for the layout will cause decode to throw
+      const data = Buffer.alloc(10);
       const accountInfo = { data } as any;
       expect(parseAmmConfigFee(accountInfo)).toBe(25); // DEFAULT_FEE_BPS = 25
     });
   });
 
-  describe('isValidCpmmPoolAccount', () => {
-    it('should return true for valid account', () => {
-      const accountInfo = {
-        executable: false,
-        owner: RAYDIUM_CPMM_PROGRAM_ID,
-        data: Buffer.alloc(CPMM_POOL_ACCOUNT_SIZE)
-      } as any;
-      expect(isValidCpmmPoolAccount(accountInfo)).toBe(true);
-    });
-
-    it('should return false if owner is wrong', () => {
-      const accountInfo = {
-        executable: false,
-        owner: PublicKey.default,
-        data: Buffer.alloc(CPMM_POOL_ACCOUNT_SIZE)
-      } as any;
-      expect(isValidCpmmPoolAccount(accountInfo)).toBe(false);
-    });
-  });
 
   describe('buildRawPool', () => {
     const mockDecoded = {

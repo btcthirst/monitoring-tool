@@ -33,39 +33,11 @@ export function normalizeAmount(amount: bigint, decimals: number): number {
   return Number(integerPart) + Number(fractionalPart) / Number(divisor);
 }
 
-/**
- * Convert number back to bigint considering decimals.
- *
- * @throws {Error} if conversion loses precision
- */
-export function denormalizeAmount(amount: number, decimals: number): bigint {
-  const amountStr = amount.toFixed(decimals);
-  const [integer, fraction = ''] = amountStr.split('.');
-  const fullStr = integer + fraction.padEnd(decimals, '0');
-
-  try {
-    return BigInt(fullStr);
-  } catch {
-    throw new Error(`Failed to denormalize ${amount} with decimals ${decimals}`);
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Validation
 // ---------------------------------------------------------------------------
 
-/**
- * Check pool reserves before calculations.
- */
-export function validateReserves(reserveA: bigint, reserveB: bigint): ValidationResult {
-  if (reserveA === 0n) {
-    return { isValid: false, error: 'Reserve A is zero' };
-  }
-  if (reserveB === 0n) {
-    return { isValid: false, error: 'Reserve B is zero' };
-  }
-  return { isValid: true };
-}
 
 /**
  * Check trade size relative to pool liquidity.
@@ -105,14 +77,29 @@ export function validateTradeSize(
 /**
  * Convert RawPool to NormalizedPool.
  * Converts bigint reserves to number and fee from bps to decimal.
+ * Also estimates TVL in quote units if quoteMint is provided.
  */
-export function normalizePool(raw: RawPool): NormalizedPool {
+export function normalizePool(raw: RawPool, quoteMint?: string): NormalizedPool {
+  const reserveA = normalizeAmount(raw.reserveA, raw.decimalsA);
+  const reserveB = normalizeAmount(raw.reserveB, raw.decimalsB);
+
+  // Estimate TVL in quote units (TVL = 2 * quote_reserve in CPMM)
+  let tvl = 0;
+  if (quoteMint) {
+    if (raw.tokenB === quoteMint) {
+      tvl = reserveB * 2;
+    } else if (raw.tokenA === quoteMint) {
+      tvl = reserveA * 2;
+    }
+  }
+
   return {
     address: raw.address,
     tokenA: raw.tokenA,
     tokenB: raw.tokenB,
-    reserveA: normalizeAmount(raw.reserveA, raw.decimalsA),
-    reserveB: normalizeAmount(raw.reserveB, raw.decimalsB),
+    reserveA,
+    reserveB,
+    tvl,
     fee: raw.feeBps / 10_000,
     decimalsA: raw.decimalsA,
     decimalsB: raw.decimalsB,
@@ -123,14 +110,6 @@ export function normalizePool(raw: RawPool): NormalizedPool {
 // Pricing
 // ---------------------------------------------------------------------------
 
-/**
- * Spot price: how much tokenB one tokenA gives (without price impact).
- * Returns 0 if reserve A is zero.
- */
-export function getSpotPrice(pool: NormalizedPool): number {
-  if (pool.reserveA === 0) return 0;
-  return pool.reserveB / pool.reserveA;
-}
 
 // ---------------------------------------------------------------------------
 // CPMM Swap Formula
@@ -210,10 +189,7 @@ export function simulateTwoHopArbitrage(
   quoteMint?: string,
 ): { amountOut: number; slippageBuy: number; slippageSell: number } {
   // Determine swap direction: true = B->A (quote is tokenB), false = A->B (quote is tokenA)
-  const quoteIsB =
-    !quoteMint ||
-    buyPool.tokenB === quoteMint ||
-    (!buyPool.tokenA.includes(quoteMint ?? '') && buyPool.tokenB !== buyPool.tokenA);
+  const quoteIsB = quoteMint ? buyPool.tokenB === quoteMint : true;
 
   // Spot prices for slippage calculation
   // If quoteIsB: spot = reserveA / reserveB (base per quote)
