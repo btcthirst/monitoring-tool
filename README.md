@@ -100,22 +100,26 @@ npm run start -- monitor
 
 ### Sample Output
 
+![Terminal Preview](file:///home/min/.gemini/antigravity/brain/ad1202e4-c713-479c-9b79-84f019297abf/terminal_output_preview_1777132538302.png)
+
+*Live monitoring of SOL/USDC pair showing profitable opportunities between different liquidity pools.*
+
 ```text
 🔍 Solana Arbitrage Monitor — Raydium CPMM
 ─────────────────────────────────────────────────────────────────
 Trade size: 100 USDC   Min profit: 0.010000   Interval: 2.0s
 ─────────────────────────────────────────────────────────────────
-╔══════════════╤══════════════╤══════════════╤═══════════╤══════════════╤════════════╤════════╗
-║ Buy Pool     │ Sell Pool    │ Net Profit   │ Profit %  │ Gross        │ Slippage   │ Fee    ║
-╟──────────────┼──────────────┼──────────────┼───────────┼──────────────┼────────────┼────────╢
-║ 8sLb...4k9m  │ 2Poy...7n2x  │ +$0.4521     │ +0.45%    │ 0.4523 USDC  │ -0.12%     │ 0.25%  ║
-║ 4tHj...9b1c  │ 2Poy...7n2x  │ +$0.1205     │ +0.12%    │ 0.1207 USDC  │ -0.05%     │ 0.25%  ║
-╚══════════════╧══════════════╧══════════════╧═══════════╧══════════════╧════════════╧════════╝
+╔══════════════╤══════════════╤══════════════╤═══════════╤══════════════╤════════════╤════════╤════════════════╗
+║ Buy Pool     │ Sell Pool    │ Net Profit   │ Profit %  │ Gross        │ Slippage   │ Fee    │ TVL (B/S)      ║
+╟──────────────┼──────────────┼──────────────┼───────────┼──────────────┼────────────┼────────┼────────────────╢
+║ 8sLb...4k9m  │ 2Poy...7n2x  │ +$0.4521     │ +0.45%    │ 0.4523 USDC  │ -0.12%     │ 0.25%  │ $45K / $1.2M   ║
+║ 4tHj...9b1c  │ 2Poy...7n2x  │ +$0.1205     │ +0.12%    │ 0.1207 USDC  │ -0.05%     │ 0.25%  │ $8.2K / $1.2M  ║
+╚══════════════╧══════════════╧══════════════╧═══════════╧══════════════╧════════════╧════════╧════════════════╝
 
 📊 Best Opportunity:
 ─────────────────────────────────────────────────────────────────
-  Buy  8sLb...4k9m  fee: 0.25%
-  Sell 2Poy...7n2x  fee: 0.25%
+  Buy  8sLb...4k9m  fee: 0.25%   TVL: $45,210
+  Sell 2Poy...7n2x  fee: 0.25%   TVL: $1,240,500
 ─────────────────────────────────────────────────────────────────
   Amount in:  100 USDC      Amount out: 100.4523 USDC
   Gross:      0.4523 USDC   Tx cost:    0.0002 USDC
@@ -149,10 +153,11 @@ amountOut = (amountInWithFee * reserveOut) / (reserveIn + amountInWithFee)
    ```
    Gross Profit = FinalAmountOut - InitialTradeSize
    ```
-2. **Net Profit**: The gross profit minus the estimated transaction cost on the Solana network.
+2. **Net Profit**: The final gain after subtracting the initial trade size and the estimated network transaction fees.
    ```
-   Net Profit = Gross Profit - TransactionCost
+   Net Profit = FinalAmountOut - InitialTradeSize - TransactionCost
    ```
+   *Where `FinalAmountOut` is the result of the full sequence (Quote -> Base -> Quote) and `InitialTradeSize` is the starting amount of quote tokens.*
 3. **Slippage**: The relative difference between the expected output (based on spot price) and the actual output (affected by pool liquidity).
    ```
    ExpectedOut = AmountIn * SpotPrice
