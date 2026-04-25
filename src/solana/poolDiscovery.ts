@@ -56,18 +56,31 @@ export function clearPoolCache(): void {
 // ---------------------------------------------------------------------------
 
 /**
+ * Sort two mint addresses the same way Raydium does on-chain:
+ * by raw bytes of the PublicKey (not by base58 string).
+ * This is critical — string sort != bytes sort for most pairs.
+ */
+function sortMintsByBytes(mintA: string, mintB: string): [string, string] {
+  const bufA = new PublicKey(mintA).toBytes();
+  const bufB = new PublicKey(mintB).toBytes();
+  for (let i = 0; i < 32; i++) {
+    if ((bufA[i] ?? 0) < (bufB[i] ?? 0)) return [mintA, mintB];
+    if ((bufA[i] ?? 0) > (bufB[i] ?? 0)) return [mintB, mintA];
+  }
+  return [mintA, mintB];
+}
+
+/**
  * Build filters for getProgramAccounts.
- * Offsets are taken from the SDK layout — no manual hardcoding.
+ * Offsets from SDK layout. Mints sorted by raw bytes to match Raydium on-chain ordering.
  */
 export function buildPoolFilters(mintA: string, mintB: string): GetProgramAccountsFilter[] {
-  const sorted = [mintA, mintB].sort();
-  const sorted0 = sorted[0] ?? mintA;
-  const sorted1 = sorted[1] ?? mintB;
+  const [token0, token1] = sortMintsByBytes(mintA, mintB);
 
   return [
     { dataSize: CPMM_POOL_ACCOUNT_SIZE },
-    { memcmp: { offset: TOKEN_0_MINT_OFFSET, bytes: sorted0 } },
-    { memcmp: { offset: TOKEN_1_MINT_OFFSET, bytes: sorted1 } },
+    { memcmp: { offset: TOKEN_0_MINT_OFFSET, bytes: token0 } },
+    { memcmp: { offset: TOKEN_1_MINT_OFFSET, bytes: token1 } },
   ];
 }
 

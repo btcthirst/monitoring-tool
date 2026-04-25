@@ -69,14 +69,23 @@ export function validateReserves(reserveA: bigint, reserveB: bigint): Validation
 
 /**
  * Check trade size relative to pool liquidity.
- * By default, trade should not exceed 10% of the reserve.
+ * tradeSize is always in quote token — validate against the reserve
+ * of the token we're selling INTO the pool (the input reserve).
+ * quoteMint identifies which side of the pool is the quote token.
  */
 export function validateTradeSize(
   pool: NormalizedPool,
   amountIn: number,
   maxPercentOfPool = 0.1,
+  quoteMint?: string,
 ): ValidationResult {
-  const maxAmount = pool.reserveA * maxPercentOfPool;
+  // Determine which reserve corresponds to the input (quote) token
+  const inputReserve =
+    quoteMint && pool.tokenB === quoteMint ? pool.reserveB :
+      quoteMint && pool.tokenA === quoteMint ? pool.reserveA :
+        pool.reserveB; // fallback: assume tokenB is quote
+
+  const maxAmount = inputReserve * maxPercentOfPool;
 
   if (amountIn > maxAmount) {
     return {
@@ -178,36 +187,58 @@ export function simulateSwapBtoA(pool: NormalizedPool, amountIn: number): number
 // ---------------------------------------------------------------------------
 
 /**
- * Simulate arbitrage across two pools: A -> B (buyPool) -> A (sellPool).
+ * Simulate arbitrage across two pools using quote token as input/output.
  *
- * Slippage is calculated as relative deviation from spot price:
- *   slippage = (actualOut - expectedOut) / expectedOut
- * Negative value means received less than spot (normal situation).
+ * Route: quote -> base (buyPool) -> quote (sellPool)
+ * i.e. spend USDC to buy SOL in buyPool, then sell SOL for USDC in sellPool.
  *
- * @returns amountOut — amount of A after both swaps
- * @returns slippageBuy — relative deviation on the first swap
- * @returns slippageSell — relative deviation on the second swap
+ * quoteMint identifies which token in the pool is the quote (input) token.
+ * If quoteMint matches tokenB, we swap B->A then A->B.
+ * If quoteMint matches tokenA, we swap A->B then B->A.
+ * Falls back to B->A->B if quoteMint is not provided.
+ *
+ * Slippage: relative deviation from spot price (negative = worse than spot).
+ *
+ * @returns amountOut — quote tokens received after both swaps
+ * @returns slippageBuy — relative slippage on the first swap
+ * @returns slippageSell — relative slippage on the second swap
  */
 export function simulateTwoHopArbitrage(
   buyPool: NormalizedPool,
   sellPool: NormalizedPool,
   amountIn: number,
+  quoteMint?: string,
 ): { amountOut: number; slippageBuy: number; slippageSell: number } {
-  const spotBuy = getSpotPrice(buyPool);   // B per A
-  const spotSell = getSpotPrice(sellPool); // B per A
+  // Determine swap direction: true = B->A (quote is tokenB), false = A->B (quote is tokenA)
+  const quoteIsB =
+    !quoteMint ||
+    buyPool.tokenB === quoteMint ||
+    (!buyPool.tokenA.includes(quoteMint ?? '') && buyPool.tokenB !== buyPool.tokenA);
 
-  // Hop 1: A -> B through buyPool
-  const amountIntermediate = simulateSwapAtoB(buyPool, amountIn);
+  // Spot prices for slippage calculation
+  // If quoteIsB: spot = reserveA / reserveB (base per quote)
+  // If !quoteIsB: spot = reserveB / reserveA
+  const spotBuy = quoteIsB ? (buyPool.reserveB === 0 ? 0 : buyPool.reserveA / buyPool.reserveB)
+    : (buyPool.reserveA === 0 ? 0 : buyPool.reserveB / buyPool.reserveA);
+  const spotSell = quoteIsB ? (sellPool.reserveB === 0 ? 0 : sellPool.reserveA / sellPool.reserveB)
+    : (sellPool.reserveA === 0 ? 0 : sellPool.reserveB / sellPool.reserveA);
 
-  // Slippage on buy
+  // Hop 1: quote -> base
+  const amountIntermediate = quoteIsB
+    ? simulateSwapBtoA(buyPool, amountIn)   // USDC -> SOL
+    : simulateSwapAtoB(buyPool, amountIn);  // tokenA -> tokenB
+
+  // Slippage on buy (how much base we got vs spot)
   const expectedIntermediate = spotBuy === 0 ? 0 : amountIn * spotBuy;
   const slippageBuy =
     expectedIntermediate === 0
       ? 0
       : (amountIntermediate - expectedIntermediate) / expectedIntermediate;
 
-  // Hop 2: B -> A through sellPool
-  const amountOut = simulateSwapBtoA(sellPool, amountIntermediate);
+  // Hop 2: base -> quote
+  const amountOut = quoteIsB
+    ? simulateSwapAtoB(sellPool, amountIntermediate)  // SOL -> USDC
+    : simulateSwapBtoA(sellPool, amountIntermediate); // tokenB -> tokenA
 
   // Slippage on sell
   const expectedOut = spotSell === 0 ? 0 : amountIntermediate / spotSell;

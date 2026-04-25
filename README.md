@@ -69,14 +69,15 @@ The application is configured primarily through the `.env` file. Below are all s
 
 ## 💻 Usage
 
-To run the application in development mode:
+To run the application using configuration from your `.env` file:
 ```bash
-npm run dev
+npm run dev     # development mode
+npm run start   # production mode
 ```
 
-To run the compiled production version:
+You can also override configuration or run the tool entirely via CLI arguments (using positional arguments for the token pair):
 ```bash
-npm run start
+npm run start -- monitor So11111111111111111111111111111111111111112 EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v --min-profit 0.001 --trade-size 1000
 ```
 
 ### Sample Output

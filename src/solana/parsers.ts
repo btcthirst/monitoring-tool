@@ -203,6 +203,6 @@ export function isValidCpmmPoolAccount(accountInfo: AccountInfo<Buffer>): boolea
   return (
     !accountInfo.executable &&
     accountInfo.owner.equals(RAYDIUM_CPMM_PROGRAM_ID) &&
-    accountInfo.data.length === CPMM_POOL_ACCOUNT_SIZE
+    accountInfo.data.length >= CPMM_POOL_ACCOUNT_SIZE
   );
 }

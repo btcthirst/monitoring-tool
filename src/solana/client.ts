@@ -67,11 +67,12 @@ export class SolanaRpcClient {
   ): Promise<{ publicKey: PublicKey; account: AccountInfo<Buffer> }[]> {
     const start = Date.now();
 
+    const commitment = options?.commitment;
     const result = await this.withRetry(
       () =>
         this.connection.getProgramAccounts(programId, {
           filters,
-          commitment: options?.commitment,
+          ...(commitment !== undefined && { commitment }),
           encoding: 'base64',
         }),
       'getProgramAccounts',
@@ -84,7 +85,7 @@ export class SolanaRpcClient {
       found: result.length,
     });
 
-    return result;
+    return result.map(({ pubkey, account }) => ({ publicKey: pubkey, account }));
   }
 
   /**

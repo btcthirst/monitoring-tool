@@ -37,7 +37,7 @@ export const AMM_CONFIG_SEED = 'amm_config';
 // Account Sizes (for dataSize filter in getProgramAccounts)
 // ---------------------------------------------------------------------------
 
-export const CPMM_POOL_ACCOUNT_SIZE = 752;
+export const CPMM_POOL_ACCOUNT_SIZE = 637; // CpmmPoolInfoLayout.span — verified against SDK v0.2.41-alpha
 
 // ---------------------------------------------------------------------------
 // Pool Status

@@ -22,10 +22,10 @@ program
   })());
 
 program
-  .command('monitor')
+  .command('monitor [mintA] [mintB]')
   .description('Start monitoring arbitrage opportunities')
-  .requiredOption('--mint-a <address>', 'Token A mint address', process.env.MINT_A)
-  .requiredOption('--mint-b <address>', 'Token B mint address', process.env.MINT_B)
+  .option('--mint-a <address>', 'Token A mint address', process.env.MINT_A)
+  .option('--mint-b <address>', 'Token B mint address', process.env.MINT_B)
   .option('--rpc <url>', 'Solana RPC URL', process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com')
   .option('--quote <address>', 'Quote token mint address (default: mint-b)', process.env.QUOTE_MINT)
   .option(
@@ -59,15 +59,35 @@ program
     parseFloat(process.env.TRADE_SIZE ?? '100'),
   )
   .option('--log-level <level>', 'Log level (error|warn|info|debug)', process.env.LOG_LEVEL ?? 'info')
-  .action(async (options) => {
+  .action(async (positionalMintA, positionalMintB, options) => {
+    // Resolve mints: positional args > --mint-a/--mint-b flags > .env > schema defaults
+    const mintA: string | undefined =
+      (typeof positionalMintA === 'string' && positionalMintA) ? positionalMintA
+        : options.mintA
+        ?? process.env.MINT_A;
+
+    const mintB: string | undefined =
+      (typeof positionalMintB === 'string' && positionalMintB) ? positionalMintB
+        : options.mintB
+        ?? process.env.MINT_B;
+
+    if (!mintA || !mintB) {
+      logger.error(
+        'Missing required mint addresses. ' +
+        'Provide them as positional args, --mint-a/--mint-b flags, or MINT_A/MINT_B env vars.\n' +
+        '  Example: npm run start -- monitor So11111111111111111111111111111111111111112 EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+      );
+      process.exit(1);
+    }
+
     // Lazy import — speeds up --help and argument validation
     const { startMonitor } = await import('./core/orchestrator');
 
     logger.info('Starting arbitrage monitor', {
       rpcUrl: options.rpc.replace(/\/\/.*@/, '//***@'),
-      mintA: options.mintA,
-      mintB: options.mintB,
-      quoteMint: options.quote ?? options.mintB,
+      mintA,
+      mintB,
+      quoteMint: options.quote ?? mintB,
       intervalMs: options.interval,
       minProfit: options.minProfit,
       tradeSize: options.tradeSize,
@@ -75,9 +95,9 @@ program
 
     await startMonitor({
       rpcUrl: options.rpc,
-      mintA: options.mintA,
-      mintB: options.mintB,
-      quoteMint: options.quote ?? options.mintB,
+      mintA,
+      mintB,
+      quoteMint: options.quote ?? mintB,
       pollingIntervalMs: options.interval,
       minProfitThreshold: options.minProfit,
       tradeSize: options.tradeSize,
