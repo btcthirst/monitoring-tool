@@ -2,10 +2,10 @@
 /**
  * Renderer for outputting arbitrage opportunities to the console.
  *
- * Responsibilities:
- * - Rendering a live-updating table
- * - Color formatting via formatters.ts
- * - Zero business logic
+ * Improvements:
+ * - ANSI-safe column alignment
+ * - Deterministic layout (no floating columns)
+ * - Fixed-width formatting for numbers
  */
 
 import Table from 'cli-table3';
@@ -24,8 +24,46 @@ import {
   formatRelativeTime,
   formatCurrency,
   formatSpotPrice,
+  visibleLength,
 } from './formatters';
 import { formatDuration } from '../utils/time';
+
+// ---------------------------------------------------------------------------
+// Column widths (single source of truth)
+// ---------------------------------------------------------------------------
+
+const COL_WIDTHS = {
+  buy: 16,
+  sell: 16,
+  profit: 16,
+  percent: 12,
+  price: 16,
+  spread: 12,
+  slippage: 12,
+  fee: 10,
+};
+
+// ---------------------------------------------------------------------------
+// ANSI-safe helpers
+// ---------------------------------------------------------------------------
+
+function padAnsi(str: string, width: number): string {
+  const len = visibleLength(str);
+  if (len >= width) return str;
+  return str + ' '.repeat(width - len);
+}
+
+function truncateAnsi(str: string, width: number): string {
+  if (visibleLength(str) <= width) return str;
+
+  // crude but safe fallback (avoid breaking ANSI)
+  const clean = str.replace(/\x1b\[[0-9;]*m/g, '');
+  return clean.slice(0, width - 1) + '…';
+}
+
+function fit(str: string, width: number): string {
+  return padAnsi(truncateAnsi(str, width), width);
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,7 +80,7 @@ export interface RenderOptions {
 }
 
 // ---------------------------------------------------------------------------
-// Main Renderer
+// Renderer
 // ---------------------------------------------------------------------------
 
 export class Renderer {
@@ -50,9 +88,6 @@ export class Renderer {
   private lastRenderTime = 0;
   private sessionOpportunities = 0;
 
-  /**
-   * Main method — clears the screen and renders the full layout.
-   */
   render(opportunities: Opportunity[], options: RenderOptions): void {
     this.clearScreen();
     this.renderHeader(options);
@@ -65,9 +100,6 @@ export class Renderer {
     this.renderCount++;
   }
 
-  /**
-   * RPC connection screen.
-   */
   renderConnecting(rpcUrl: string): void {
     this.clearScreen();
     console.log(chalk.cyan.bold('\n🔌 Connecting to Solana RPC...'));
@@ -75,9 +107,6 @@ export class Renderer {
     console.log(chalk.gray('   Please wait...\n'));
   }
 
-  /**
-   * Successful connection message.
-   */
   renderConnected(poolsFound: number): void {
     console.log(chalk.green.bold('\n✅ Connected successfully'));
     console.log(
@@ -88,9 +117,6 @@ export class Renderer {
     console.log();
   }
 
-  /**
-   * Error output (without exiting the program).
-   */
   renderError(error: Error): void {
     this.clearScreen();
     console.log(chalk.red.bold('\n❌ Error occurred'));
@@ -101,8 +127,6 @@ export class Renderer {
   }
 
   // ---------------------------------------------------------------------------
-  // Private methods
-  // ---------------------------------------------------------------------------
 
   private clearScreen(): void {
     console.clear();
@@ -111,11 +135,13 @@ export class Renderer {
   private renderHeader(options: RenderOptions): void {
     console.log(chalk.bold.cyan('\n🔍 Solana Arbitrage Monitor') + chalk.gray(' — Raydium CPMM'));
     console.log(formatSeparator());
+
     console.log(
       formatKeyValue('Trade size:', formatTradeSize(options.tradeSize, options.quoteSymbol)) + '   ' +
       formatKeyValue('Min profit:', chalk.yellow(`${formatNumber(options.minProfit, 6)} ${options.quoteSymbol}`)) + '   ' +
       formatKeyValue('Interval:', chalk.yellow(formatDuration(options.pollingIntervalMs))),
     );
+
     console.log(formatSeparator());
   }
 
@@ -130,45 +156,70 @@ export class Renderer {
 
     const table = new Table({
       head: [
-        chalk.cyan('Buy Pool'),
-        chalk.cyan('Sell Pool'),
-        chalk.cyan('Net Profit'),
-        chalk.cyan('Profit %'),
-        chalk.cyan('Price (buy)'),
-        chalk.cyan('Spread'),
-        chalk.cyan('Slippage'),
-        chalk.cyan('Fee'),
+        fit(chalk.cyan('Buy Pool'), COL_WIDTHS.buy),
+        fit(chalk.cyan('Sell Pool'), COL_WIDTHS.sell),
+        fit(chalk.cyan('Net Profit'), COL_WIDTHS.profit),
+        fit(chalk.cyan('Profit %'), COL_WIDTHS.percent),
+        fit(chalk.cyan('Price (buy)'), COL_WIDTHS.price),
+        fit(chalk.cyan('Spread'), COL_WIDTHS.spread),
+        fit(chalk.cyan('Slippage'), COL_WIDTHS.slippage),
+        fit(chalk.cyan('Fee'), COL_WIDTHS.fee),
       ],
-      colWidths: [14, 14, 14, 11, 14, 10, 12, 8],
-      style: { head: [], border: [], compact: false },
-      chars: {
-        top: '═', 'top-mid': '╤', 'top-left': '╔', 'top-right': '╗',
-        bottom: '═', 'bottom-mid': '╧', 'bottom-left': '╚', 'bottom-right': '╝',
-        left: '║', 'left-mid': '╟', mid: '─', 'mid-mid': '┼',
-        right: '║', 'right-mid': '╢', middle: '│',
-      },
+      wordWrap: false,
+      style: { head: [], border: [] },
     });
 
     for (const opp of slice) {
       const avgSlippage = (opp.slippageBuy + opp.slippageSell) / 2;
 
-      table.push([
+      const buy = fit(
         chalk.cyan(formatAddress(opp.buyPool.address, 4, 4)),
+        COL_WIDTHS.buy,
+      );
+
+      const sell = fit(
         chalk.magenta(formatAddress(opp.sellPool.address, 4, 4)),
+        COL_WIDTHS.sell,
+      );
+
+      const profit = fit(
         formatProfit(opp.netProfit),
+        COL_WIDTHS.profit,
+      );
+
+      const percent = fit(
         formatPercent(opp.profitPercent, true, 3),
+        COL_WIDTHS.percent,
+      );
+
+      const price = fit(
         formatSpotPrice(opp.spotPriceBuy, options.quoteSymbol),
+        COL_WIDTHS.price,
+      );
+
+      const spread = fit(
         formatPercent(opp.priceSpreadPercent, true, 3),
+        COL_WIDTHS.spread,
+      );
+
+      const slip = fit(
         formatSlippage(avgSlippage),
+        COL_WIDTHS.slippage,
+      );
+
+      const fee = fit(
         formatFee(opp.buyPool.fee),
-      ]);
+        COL_WIDTHS.fee,
+      );
+
+      table.push([buy, sell, profit, percent, price, spread, slip, fee]);
     }
 
     console.log(table.toString());
 
     if (opportunities.length > maxDisplay) {
       console.log(
-        chalk.gray(`\n  ... and ${opportunities.length - maxDisplay} more (adjust --min-profit to filter)`),
+        chalk.gray(`\n  ... and ${opportunities.length - maxDisplay} more`),
       );
     }
   }
@@ -183,6 +234,7 @@ export class Renderer {
       chalk.cyan('  Buy  ') + chalk.gray(opp.buyPool.address) +
       chalk.gray(`  fee: ${(opp.buyPool.fee * 100).toFixed(2)}%`),
     );
+
     console.log(
       chalk.magenta('  Sell ') + chalk.gray(opp.sellPool.address) +
       chalk.gray(`  fee: ${(opp.sellPool.fee * 100).toFixed(2)}%`),
@@ -194,34 +246,28 @@ export class Renderer {
       `  ${formatKeyValue('Buy price:', formatSpotPrice(opp.spotPriceBuy, options.quoteSymbol), 12)}` +
       `  ${formatKeyValue('Sell price:', formatSpotPrice(opp.spotPriceSell, options.quoteSymbol), 12)}`,
     );
+
     console.log(
       `  ${formatKeyValue('Price spread:', formatPercent(opp.priceSpreadPercent, true, 4), 12)}` +
       `  ${formatKeyValue('Buy TVL:', chalk.gray(formatCurrency(opp.buyPool.tvl, options.quoteSymbol, 0)), 12)}`,
     );
+
     console.log(formatSeparator('─'));
 
     console.log(
       `  ${formatKeyValue('Amount in:', chalk.white(formatCurrency(opp.amountIn, options.quoteSymbol, 2)), 12)}` +
       `  ${formatKeyValue('Amount out:', chalk.white(formatCurrency(opp.amountOut, options.quoteSymbol, 6)), 12)}`,
     );
-    console.log(
-      `  ${formatKeyValue('Gross:', chalk.white(formatCurrency(opp.grossProfit, options.quoteSymbol, 6)), 12)}` +
-      `  ${formatKeyValue('Tx cost:', chalk.gray(formatCurrency(opp.txCost, options.quoteSymbol, 6)), 12)}`,
-    );
+
     console.log(
       `  ${formatKeyValue('Net profit:', chalk.green.bold(formatCurrency(opp.netProfit, options.quoteSymbol, 6)), 12)}` +
       `  ${formatKeyValue('Profit %:', formatPercent(opp.profitPercent, true, 4), 12)}`,
-    );
-    console.log(
-      `  ${formatKeyValue('Slip buy:', formatSlippage(opp.slippageBuy), 12)}` +
-      `  ${formatKeyValue('Slip sell:', formatSlippage(opp.slippageSell), 12)}`,
     );
   }
 
   private renderEmpty(): void {
     console.log(chalk.yellow('\n  ⏳ No profitable opportunities found'));
-    console.log(chalk.gray('     Waiting for price discrepancies across pools...'));
-    console.log(chalk.gray('     Try lowering --min-profit or increasing --trade-size'));
+    console.log(chalk.gray('     Waiting for price discrepancies...'));
   }
 
   private renderFooter(opportunities: Opportunity[], options: RenderOptions): void {
@@ -234,16 +280,11 @@ export class Renderer {
 
     console.log(
       chalk.gray(`  Updated: ${chalk.white(now)}`) +
-      chalk.gray(`   Last cycle: ${sinceLastRender}`) +
+      chalk.gray(`   Last: ${sinceLastRender}`) +
       chalk.gray(`   Renders: ${this.renderCount}`) +
-      chalk.gray(`   Session opps: ${chalk.green(String(this.sessionOpportunities))}`),
+      chalk.gray(`   Opps: ${chalk.green(String(this.sessionOpportunities))}`),
     );
 
-    console.log(chalk.gray(
-      `\n  Legend: ${chalk.cyan('buy pool')}  ${chalk.magenta('sell pool')}` +
-      `  ${chalk.green('profit > 0')}  ${chalk.yellow('slippage warn')}  ${chalk.red('high slippage')}` +
-      `  ${chalk.white('Price(buy) = spot price of base in quote')}`,
-    ));
     console.log(chalk.gray(`\n  Press ${chalk.white('Ctrl+C')} to exit`));
   }
 }
