@@ -72,9 +72,9 @@ export class ArbitrageOrchestrator {
       minProfit: config.minProfitThreshold,
       maxSlippage: config.maxSlippagePercent,
       txCostInQuote: config.txCostInQuote,
-      quoteMint: config.quoteMint,
+      quoteMint: config.quoteMint!,
     };
-    this.quoteSymbol = resolveSymbol(config.quoteMint);
+    this.quoteSymbol = resolveSymbol(config.quoteMint!);
 
     this.rpcClient = new SolanaRpcClient(config.rpcUrl);
     this.renderer = new Renderer();

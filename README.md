@@ -72,7 +72,6 @@ The application is configured primarily through the `.env` file. Below are all s
 | `MAX_SLIPPAGE_PERCENT`| number | `0.05` | Maximum allowed slippage (e.g., 0.05 = 5%). |
 | `TX_COST_IN_QUOTE` | number | `0.0002` | Estimated transaction network fee measured in `QUOTE_MINT`. |
 | `LOG_LEVEL` | string | `info` | Logging verbosity (`error`, `warn`, `info`, `debug`). |
-| `MAX_OPPORTUNITIES_DISPLAY` | number| `15` | Maximum number of rows to display in the CLI table. |
 
 ## 💻 Usage
 

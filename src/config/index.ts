@@ -66,7 +66,14 @@ export function loadConfig(cliOverrides?: Partial<Config>): Config {
   };
 
   try {
-    return ConfigSchema.parse(merged);
+    const parsed = ConfigSchema.parse(merged);
+    
+    // Logic fallback: if quoteMint is not provided, use mintB
+    if (!parsed.quoteMint) {
+      parsed.quoteMint = parsed.mintB;
+    }
+
+    return parsed;
   } catch (error) {
     if (error instanceof ZodError) {
       const issues = error.issues

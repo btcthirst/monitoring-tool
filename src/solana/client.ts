@@ -144,11 +144,7 @@ export class SolanaRpcClient {
     return results.get(publicKey.toString()) ?? null;
   }
 
-  async getMintDecimals(mintAddress: PublicKey): Promise<number | null> {
-    const accountInfo = await this.getAccountInfo(mintAddress);
-    if (!accountInfo?.data || accountInfo.data.length < 45) return null;
-    return accountInfo.data.readUInt8(44);
-  }
+
 
   async healthCheck(): Promise<boolean> {
     try {
@@ -211,8 +207,4 @@ export class SolanaRpcClient {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-export function createRpcClient(rpcUrl: string, commitment?: Commitment): SolanaRpcClient {
-  return new SolanaRpcClient(rpcUrl, commitment);
 }

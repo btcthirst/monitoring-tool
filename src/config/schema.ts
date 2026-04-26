@@ -22,7 +22,7 @@ export const ConfigSchema = z.object({
   // Tokens
   mintA: solanaAddress,
   mintB: solanaAddress,
-  quoteMint: solanaAddress,
+  quoteMint: solanaAddress.optional(),
 
   // Arbitrage
   pollingIntervalMs: z.number().int().min(500, 'Polling interval must be >= 500ms').default(2000),
