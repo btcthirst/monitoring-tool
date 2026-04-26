@@ -15,20 +15,6 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/**
- * Current Unix timestamp in seconds.
- */
-export function unixNow(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
-/**
- * Current time in ISO format.
- */
-export function isoNow(): string {
-  return new Date().toISOString();
-}
-
 // ---------------------------------------------------------------------------
 // Formatting
 // ---------------------------------------------------------------------------
@@ -54,21 +40,6 @@ export function formatDuration(ms: number): string {
   if (s > 0 || parts.length === 0) parts.push(`${s}s`);
 
   return parts.join(' ');
-}
-
-/**
- * Format timestamp.
- */
-export function formatTimestamp(
-  timestamp: number,
-  format: 'time' | 'date' | 'datetime' = 'datetime',
-): string {
-  const date = new Date(timestamp);
-  switch (format) {
-    case 'time': return date.toLocaleTimeString();
-    case 'date': return date.toLocaleDateString();
-    case 'datetime': return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -100,72 +71,6 @@ export class PerformanceTimer {
   lap(): { elapsedMs: number; elapsedFormatted: string } {
     const elapsedMs = Date.now() - this.startTime;
     return { elapsedMs, elapsedFormatted: formatDuration(elapsedMs) };
-  }
-
-}
-
-// ---------------------------------------------------------------------------
-// TimeTracker
-// ---------------------------------------------------------------------------
-
-/**
- * Statistics collector for multiple operations.
- *
- * @example
- * const tracker = new TimeTracker();
- * await tracker.measure('rpcCall', () => client.getProgramAccounts(...));
- * console.log(tracker.getStats());
- */
-export class TimeTracker {
-  private records = new Map<string, number[]>();
-
-  async measure<T>(label: string, fn: () => Promise<T>): Promise<T> {
-    const start = Date.now();
-    try {
-      return await fn();
-    } finally {
-      this.record(label, Date.now() - start);
-    }
-  }
-
-  measureSync<T>(label: string, fn: () => T): T {
-    const start = Date.now();
-    try {
-      return fn();
-    } finally {
-      this.record(label, Date.now() - start);
-    }
-  }
-
-  private record(label: string, elapsed: number): void {
-    const arr = this.records.get(label) ?? [];
-    arr.push(elapsed);
-    this.records.set(label, arr);
-  }
-
-  getStats(): Map<string, {
-    count: number;
-    totalMs: number;
-    avgMs: number;
-    minMs: number;
-    maxMs: number;
-  }> {
-    const stats = new Map();
-    for (const [label, times] of this.records) {
-      const total = times.reduce((a, b) => a + b, 0);
-      stats.set(label, {
-        count: times.length,
-        totalMs: total,
-        avgMs: total / times.length,
-        minMs: Math.min(...times),
-        maxMs: Math.max(...times),
-      });
-    }
-    return stats;
-  }
-
-  clear(): void {
-    this.records.clear();
   }
 }
 

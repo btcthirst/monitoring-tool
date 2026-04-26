@@ -100,7 +100,7 @@ npm run start -- monitor
 
 ### Sample Output
 
-![Terminal Preview](file:///home/min/.gemini/antigravity/brain/ad1202e4-c713-479c-9b79-84f019297abf/terminal_output_preview_1777132538302.png)
+![Terminal Preview](docs/preview.png)
 
 *Live monitoring of SOL/USDC pair showing profitable opportunities between different liquidity pools.*
 
@@ -179,9 +179,9 @@ amountOut = (amountInWithFee * reserveOut) / (reserveIn + amountInWithFee)
 This project is designed with a modular architecture, making it easy to add new features.
 
 ### 1. Adding a New DEX (e.g., Meteora or Orca)
-1.  Create a new discovery script in `src/solana/` (e.g., `orcaDiscovery.ts`).
-2.  Implement the `RawPool` interface in your new module.
-3.  Update the `PoolService` in `src/services/poolService.ts` to include the new discovery logic.
+1.  Create a new discovery script in `src/solana/` (e.g., `meteoraDiscovery.ts`).
+2.  Implement the `RawPool` interface from `src/core/types.ts` in your new module.
+3.  In `src/core/orchestrator.ts`, import your new discovery function alongside `findPoolsForPair` and merge the results.
 4.  Since `core/` logic is DEX-agnostic, the arbitrage math will work automatically.
 
 ### 2. Custom Logger Adapter

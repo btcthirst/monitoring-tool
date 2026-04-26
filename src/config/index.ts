@@ -16,10 +16,6 @@ dotenvConfig();
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Safely parse a number from a string.
- * Returns undefined if string is missing or not a number.
- */
 function parseIntSafe(value: string | undefined): number | undefined {
   if (value === undefined || value === '') return undefined;
   const n = parseInt(value, 10);
@@ -30,11 +26,6 @@ function parseFloatSafe(value: string | undefined): number | undefined {
   if (value === undefined || value === '') return undefined;
   const n = parseFloat(value);
   return isNaN(n) ? undefined : n;
-}
-
-function parseBoolSafe(value: string | undefined): boolean | undefined {
-  if (value === undefined || value === '') return undefined;
-  return value === 'true';
 }
 
 /**
@@ -55,12 +46,6 @@ function loadFromEnv(): Partial<Config> {
       maxSlippagePercent: parseFloatSafe(process.env.MAX_SLIPPAGE_PERCENT),
       txCostInQuote: parseFloatSafe(process.env.TX_COST_IN_QUOTE),
       logLevel: process.env.LOG_LEVEL,
-      logToFile: parseBoolSafe(process.env.LOG_TO_FILE),
-      maxOpportunitiesDisplay: parseIntSafe(process.env.MAX_OPPORTUNITIES_DISPLAY),
-      showSlippage: parseBoolSafe(process.env.SHOW_SLIPPAGE),
-      maxPoolsToMonitor: parseIntSafe(process.env.MAX_POOLS_TO_MONITOR),
-      rpcRetries: parseIntSafe(process.env.RPC_RETRIES),
-      rpcRetryDelayMs: parseIntSafe(process.env.RPC_RETRY_DELAY_MS),
     }).filter(([, v]) => v !== undefined),
   ) as Partial<Config>;
 }
@@ -68,8 +53,6 @@ function loadFromEnv(): Partial<Config> {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
-
-let cachedConfig: Config | null = null;
 
 /**
  * Load and validate configuration.
@@ -83,10 +66,7 @@ export function loadConfig(cliOverrides?: Partial<Config>): Config {
   };
 
   try {
-    // ConfigSchema.parse applies Zod defaults for missing fields
-    const validated = ConfigSchema.parse(merged);
-    cachedConfig = validated;
-    return validated;
+    return ConfigSchema.parse(merged);
   } catch (error) {
     if (error instanceof ZodError) {
       const issues = error.issues
@@ -97,8 +77,6 @@ export function loadConfig(cliOverrides?: Partial<Config>): Config {
     throw error;
   }
 }
-
-
 
 // Re-export types so consumers don't import directly from schema
 export { ConfigSchema, type Config, DEFAULT_VALUES } from './schema';

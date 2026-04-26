@@ -98,6 +98,12 @@ export type Opportunity = {
   slippageBuy: number;
   /** Relative slippage on sell swap (similar to slippageBuy) */
   slippageSell: number;
+  /** Spot price of base token in buy pool (quote per base, e.g. USDC per SOL) */
+  spotPriceBuy: number;
+  /** Spot price of base token in sell pool (quote per base, e.g. USDC per SOL) */
+  spotPriceSell: number;
+  /** Relative price spread between pools: (sellPrice - buyPrice) / buyPrice * 100 */
+  priceSpreadPercent: number;
   /** Unix timestamp (ms) of the calculation moment */
   timestamp: number;
 };

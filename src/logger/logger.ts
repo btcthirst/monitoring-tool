@@ -55,7 +55,6 @@ const consoleFormat = winston.format.combine(
   winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.colorize({ all: true }),
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
-    // Remove internal Winston fields
     const { splat, label, ...rest } = meta as Record<string, unknown>;
     const hasMeta = Object.keys(rest).length > 0;
     const metaStr = hasMeta ? `\n  └─ ${JSON.stringify(rest, null, 2)}` : '';
@@ -146,10 +145,6 @@ export function setLogLevel(level: LogLevel): void {
     t.level = level;
   });
 }
-
-/**
- * Log detected arbitrage opportunity.
- */
 
 /**
  * Log RPC call (debug level).

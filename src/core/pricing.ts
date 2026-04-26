@@ -110,6 +110,21 @@ export function normalizePool(raw: RawPool, quoteMint?: string): NormalizedPool 
 // Pricing
 // ---------------------------------------------------------------------------
 
+/**
+ * Spot price of the base token expressed in quote units (quote per base).
+ *
+ * Example (SOL/USDC pair, quoteIsB = USDC is tokenB):
+ *   spotPrice = reserveB / reserveA = USDC / SOL ≈ 150
+ *
+ * Returns 0 if any reserve is zero (pool is empty).
+ */
+export function getSpotPrice(pool: NormalizedPool, quoteMint?: string): number {
+  const quoteIsB = quoteMint ? pool.tokenB === quoteMint : true;
+  if (quoteIsB) {
+    return pool.reserveA === 0 ? 0 : pool.reserveB / pool.reserveA;
+  }
+  return pool.reserveB === 0 ? 0 : pool.reserveA / pool.reserveB;
+}
 
 // ---------------------------------------------------------------------------
 // CPMM Swap Formula

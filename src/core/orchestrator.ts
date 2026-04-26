@@ -26,7 +26,6 @@ import { Config } from '../config';
 // Types
 // ---------------------------------------------------------------------------
 
-// Re-use central Config type
 export type OrchestratorConfig = Config;
 
 interface MonitoringState {
@@ -49,7 +48,6 @@ export class ArbitrageOrchestrator {
   private readonly mintA: string;
   private readonly mintB: string;
   private readonly pollingIntervalMs: number;
-
   private readonly quoteSymbol: string;
 
   private executor: PeriodicExecutor | null = null;
@@ -81,9 +79,7 @@ export class ArbitrageOrchestrator {
     this.rpcClient = new SolanaRpcClient(config.rpcUrl);
     this.renderer = new Renderer();
 
-    if (config.logLevel) {
-      setLogLevel(config.logLevel as any);
-    }
+    setLogLevel(config.logLevel);
 
     logger.info('ArbitrageOrchestrator initialized', {
       mintA: config.mintA,
@@ -182,7 +178,7 @@ export class ArbitrageOrchestrator {
       if (err.message.toLowerCase().includes('fetch failed') || err.message.includes('403')) {
         logger.warn(
           'Public RPC endpoints often block getProgramAccounts or complex filters. ' +
-          'It is highly recommended to use a private RPC provider (Helius, QuickNode, Alchemy).'
+          'It is highly recommended to use a private RPC provider (Helius, QuickNode, Alchemy).',
         );
       }
 
@@ -222,7 +218,6 @@ export class ArbitrageOrchestrator {
     this.state.totalOpportunities += opportunities.length;
     this.state.lastUpdateTime = Date.now();
 
-    // Only render if we have updated data to show
     this.renderer.render(topOpps, {
       minProfit: this.config.minProfit,
       quoteMint: this.config.quoteMint,
@@ -264,11 +259,9 @@ export class ArbitrageOrchestrator {
       return await this.discoverPools();
     }
 
-    // Gather pool addresses to fetch updated PoolState
     const poolAddresses = this.rawPools.map((p) => new PublicKey(p.address));
     const poolAccounts = await this.rpcClient.getMultipleAccounts(poolAddresses);
 
-    // Decode updated PoolState -> get vault addresses
     const decodedPools: Array<{
       address: string;
       state: NonNullable<ReturnType<typeof decodePoolState>>;
@@ -292,7 +285,6 @@ export class ArbitrageOrchestrator {
       return await this.discoverPools();
     }
 
-    // Batch request: vault balances + configId fee
     const vaultAndConfigAddresses = decodedPools.flatMap(({ state }) => [
       state.vaultA,
       state.vaultB,
@@ -301,7 +293,6 @@ export class ArbitrageOrchestrator {
 
     const accountsMap = await this.rpcClient.getMultipleAccounts(vaultAndConfigAddresses);
 
-    // Assemble updated RawPools
     const updatedPools: RawPool[] = [];
 
     for (const { address, state } of decodedPools) {
@@ -334,9 +325,7 @@ export class ArbitrageOrchestrator {
     this.rawPools = updatedPools;
     this.state.poolsFound = updatedPools.length;
 
-    logger.debug('Pool data refreshed', {
-      total: this.rawPools.length,
-    });
+    logger.debug('Pool data refreshed', { total: this.rawPools.length });
 
     return updatedPools.length > 0;
   }

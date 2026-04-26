@@ -22,8 +22,8 @@ import {
   formatSeparator,
   formatKeyValue,
   formatRelativeTime,
-  padVisible,
   formatCurrency,
+  formatSpotPrice,
 } from './formatters';
 import { formatDuration } from '../utils/time';
 
@@ -134,12 +134,12 @@ export class Renderer {
         chalk.cyan('Sell Pool'),
         chalk.cyan('Net Profit'),
         chalk.cyan('Profit %'),
-        chalk.cyan('Gross'),
+        chalk.cyan('Price (buy)'),
+        chalk.cyan('Spread'),
         chalk.cyan('Slippage'),
         chalk.cyan('Fee'),
-        chalk.cyan('TVL (B/S)'),
       ],
-      colWidths: [14, 14, 14, 11, 14, 12, 8, 16],
+      colWidths: [14, 14, 14, 11, 14, 10, 12, 8],
       style: { head: [], border: [], compact: false },
       chars: {
         top: '═', 'top-mid': '╤', 'top-left': '╔', 'top-right': '╗',
@@ -157,10 +157,10 @@ export class Renderer {
         chalk.magenta(formatAddress(opp.sellPool.address, 4, 4)),
         formatProfit(opp.netProfit),
         formatPercent(opp.profitPercent, true, 3),
-        chalk.white(formatCurrency(opp.grossProfit, options.quoteSymbol, 6)),
+        formatSpotPrice(opp.spotPriceBuy, options.quoteSymbol),
+        formatPercent(opp.priceSpreadPercent, true, 3),
         formatSlippage(avgSlippage),
         formatFee(opp.buyPool.fee),
-        chalk.gray(`${formatCurrency(opp.buyPool.tvl, options.quoteSymbol, 0)} / ${formatCurrency(opp.sellPool.tvl, options.quoteSymbol, 0)}`),
       ]);
     }
 
@@ -191,6 +191,16 @@ export class Renderer {
     console.log(formatSeparator('─'));
 
     console.log(
+      `  ${formatKeyValue('Buy price:', formatSpotPrice(opp.spotPriceBuy, options.quoteSymbol), 12)}` +
+      `  ${formatKeyValue('Sell price:', formatSpotPrice(opp.spotPriceSell, options.quoteSymbol), 12)}`,
+    );
+    console.log(
+      `  ${formatKeyValue('Price spread:', formatPercent(opp.priceSpreadPercent, true, 4), 12)}` +
+      `  ${formatKeyValue('Buy TVL:', chalk.gray(formatCurrency(opp.buyPool.tvl, options.quoteSymbol, 0)), 12)}`,
+    );
+    console.log(formatSeparator('─'));
+
+    console.log(
       `  ${formatKeyValue('Amount in:', chalk.white(formatCurrency(opp.amountIn, options.quoteSymbol, 2)), 12)}` +
       `  ${formatKeyValue('Amount out:', chalk.white(formatCurrency(opp.amountOut, options.quoteSymbol, 6)), 12)}`,
     );
@@ -201,10 +211,6 @@ export class Renderer {
     console.log(
       `  ${formatKeyValue('Net profit:', chalk.green.bold(formatCurrency(opp.netProfit, options.quoteSymbol, 6)), 12)}` +
       `  ${formatKeyValue('Profit %:', formatPercent(opp.profitPercent, true, 4), 12)}`,
-    );
-    console.log(
-      `  ${formatKeyValue('Buy TVL:', chalk.gray(formatCurrency(opp.buyPool.tvl, options.quoteSymbol, 0)), 12)}` +
-      `  ${formatKeyValue('Sell TVL:', chalk.gray(formatCurrency(opp.sellPool.tvl, options.quoteSymbol, 0)), 12)}`,
     );
     console.log(
       `  ${formatKeyValue('Slip buy:', formatSlippage(opp.slippageBuy), 12)}` +
@@ -236,7 +242,7 @@ export class Renderer {
     console.log(chalk.gray(
       `\n  Legend: ${chalk.cyan('buy pool')}  ${chalk.magenta('sell pool')}` +
       `  ${chalk.green('profit > 0')}  ${chalk.yellow('slippage warn')}  ${chalk.red('high slippage')}` +
-      `  ${chalk.gray(`TVL in ${options.quoteSymbol} equiv.`)}`,
+      `  ${chalk.white('Price(buy) = spot price of base in quote')}`,
     ));
     console.log(chalk.gray(`\n  Press ${chalk.white('Ctrl+C')} to exit`));
   }

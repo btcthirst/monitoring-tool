@@ -11,7 +11,6 @@ import {
   resolveSymbol,
   formatCurrency,
   visibleLength,
-  padVisible,
 } from '../formatters';
 
 describe('ui formatters', () => {
@@ -97,12 +96,6 @@ describe('ui formatters', () => {
       expect(visibleLength(colored)).toBe(5);
     });
 
-    it('should pad considering visible length', () => {
-      const colored = '\x1b[32mHi\x1b[0m'; // length 2
-      const padded = padVisible(colored, 5);
-      expect(visibleLength(padded)).toBe(5);
-      expect(padded.endsWith('   ')).toBe(true);
-    });
 
     it('should format currency with $ for USDC/USDT', () => {
       expect(formatCurrency(100, 'USDC')).toContain('$100');

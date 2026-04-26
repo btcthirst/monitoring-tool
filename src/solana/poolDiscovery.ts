@@ -46,6 +46,18 @@ interface CacheEntry {
 
 const poolCache = new Map<string, CacheEntry>();
 
+/**
+ * Remove all cache entries older than CACHE_TTL_MS.
+ * Called on every write to prevent unbounded growth during long sessions.
+ */
+function evictExpiredCache(): void {
+  const now = Date.now();
+  for (const [key, entry] of poolCache) {
+    if (now - entry.timestamp >= CACHE_TTL_MS) {
+      poolCache.delete(key);
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Filters
@@ -142,7 +154,6 @@ export async function findPoolsForPair(
 
   // --- Stage 3: Vault balances + AmmConfig fee ------------------------------
 
-  // Gather all vault + configId addresses in a single batch request
   const vaultAndConfigAddresses = decoded.flatMap(({ state }) => [
     state.vaultA,
     state.vaultB,
@@ -188,9 +199,10 @@ export async function findPoolsForPair(
     if (pool) pools.push(pool);
   }
 
-  // --- Caching -------------------------------------------------------------
+  // --- Cache (with eviction) ------------------------------------------------
 
   if (useCache && pools.length > 0) {
+    evictExpiredCache();
     poolCache.set(cacheKey, { pools, timestamp: Date.now() });
   }
 

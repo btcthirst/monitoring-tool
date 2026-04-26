@@ -59,7 +59,6 @@ export function formatAddress(
   return `${address.slice(0, startLength)}...${address.slice(-endLength)}`;
 }
 
-
 // ---------------------------------------------------------------------------
 // Numbers
 // ---------------------------------------------------------------------------
@@ -76,6 +75,13 @@ export function formatNumber(
   return mathFormatNumber(value, decimals, stripZeros);
 }
 
+/**
+ * Format spot price (quote units per base token).
+ * @example formatSpotPrice(150.25, 'USDC') -> '150.25 USDC'
+ */
+export function formatSpotPrice(price: number, quoteSymbol: string): string {
+  return chalk.white(`${formatNumber(price, 4)} ${quoteSymbol}`);
+}
 
 // ---------------------------------------------------------------------------
 // Profit and percentages
@@ -127,7 +133,6 @@ export function formatFee(fee: number): string {
   return chalk.gray(`${(fee * 100).toFixed(2)}%`);
 }
 
-
 export function formatTradeSize(size: number, quoteSymbol: string): string {
   return chalk.cyan(`${formatNumber(size, 2)} ${quoteSymbol}`);
 }
@@ -172,19 +177,10 @@ export function formatKeyValue(key: string, value: string, keyWidth = 16): strin
   return `${chalk.gray(key.padEnd(keyWidth))} ${value}`;
 }
 
-
 /**
  * String length without ANSI escape codes (for proper padding).
  */
 export function visibleLength(str: string): number {
   // eslint-disable-next-line no-control-regex
   return str.replace(/\x1b\[[0-9;]*m/g, '').length;
-}
-
-/**
- * Pad string to specified visible width (accounts for ANSI codes).
- */
-export function padVisible(str: string, width: number, char = ' '): string {
-  const len = visibleLength(str);
-  return len >= width ? str : str + char.repeat(width - len);
 }

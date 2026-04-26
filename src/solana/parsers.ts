@@ -7,7 +7,7 @@
  * with all fields including vault addresses and fee rate.
  */
 
-import { PublicKey, AccountInfo, Connection } from '@solana/web3.js';
+import { PublicKey, AccountInfo } from '@solana/web3.js';
 import { CpmmPoolInfoLayout, CpmmConfigInfoLayout } from '@raydium-io/raydium-sdk-v2';
 import { RawPool } from '../core/types';
 import { logger } from '../logger/logger';
@@ -117,11 +117,11 @@ export function readVaultBalance(accountInfo: AccountInfo<Buffer>): bigint | nul
 /**
  * Assemble RawPool from decoded PoolState + vault balances.
  *
- * @param address      - pool address
- * @param decoded      - decoded PoolState (via SDK)
- * @param reserve0     - vaultA balance
- * @param reserve1     - vaultB balance
- * @param feeBps       - fee in basis points (from AmmConfig or default)
+ * @param address       - pool address
+ * @param decoded       - decoded PoolState (via SDK)
+ * @param reserve0      - vaultA balance
+ * @param reserve1      - vaultB balance
+ * @param feeBps        - fee in basis points (from AmmConfig or default)
  * @param expectedMintA - pair filter
  * @param expectedMintB - pair filter
  */
@@ -185,7 +185,7 @@ export function parseAmmConfigFee(accountInfo: AccountInfo<Buffer>): number {
   try {
     const decoded = CpmmConfigInfoLayout.decode(accountInfo.data);
     const feeRateRaw = BigInt(decoded.tradeFeeRate.toString());
-    
+
     // feeRate units: 1e-6 (e.g. 2500 -> 0.0025)
     // convert to bps (1e-4): bps = feeRate / 100
     const feeBps = Number(feeRateRaw / 100n);

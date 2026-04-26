@@ -37,16 +37,6 @@ export const ConfigSchema = z.object({
 
   // Logging
   logLevel: z.enum(['error', 'warn', 'info', 'http', 'debug']).default('info'),
-  logToFile: z.boolean().default(true),
-
-  // UI
-  maxOpportunitiesDisplay: z.number().int().positive().default(15),
-  showSlippage: z.boolean().default(true),
-
-  // Advanced options
-  maxPoolsToMonitor: z.number().int().positive().default(50),
-  rpcRetries: z.number().int().min(1).max(10).default(3),
-  rpcRetryDelayMs: z.number().int().positive().default(1000),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

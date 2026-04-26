@@ -24,6 +24,7 @@ import {
   calculateProfitPercent,
   isProfitable,
   validateTradeSize,
+  getSpotPrice,
 } from './pricing';
 
 // ---------------------------------------------------------------------------
@@ -158,6 +159,13 @@ function evaluateDirection(
 
   if (!profitable) return null;
 
+  // Spot prices for display (quote per base, e.g. USDC per SOL)
+  const spotPriceBuy = getSpotPrice(buyPool, config.quoteMint);
+  const spotPriceSell = getSpotPrice(sellPool, config.quoteMint);
+  const priceSpreadPercent = spotPriceBuy > 0
+    ? ((spotPriceSell - spotPriceBuy) / spotPriceBuy) * 100
+    : 0;
+
   return {
     buyPool,
     sellPool,
@@ -169,6 +177,9 @@ function evaluateDirection(
     profitPercent,
     slippageBuy,
     slippageSell,
+    spotPriceBuy,
+    spotPriceSell,
+    priceSpreadPercent,
     timestamp: Date.now(),
   };
 }
