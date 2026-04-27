@@ -79,7 +79,8 @@ describe('ui formatters', () => {
 
   describe('UI elements', () => {
     it('should format separator', () => {
-      expect(formatSeparator('-', 5)).toContain('-----');
+      const formatted = formatSeparator('-', 5);
+      expect(visibleLength(formatted)).toBe(5);
     });
 
     it('should format key-value', () => {

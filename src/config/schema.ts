@@ -1,6 +1,11 @@
 // config/schema.ts
 /**
- * Zod schemas for configuration validation
+ * Zod schemas for configuration validation.
+ *
+ * Default token addresses (for reference and .env.example):
+ *   MINT_A   = So11111111111111111111111111111111111111112  (Wrapped SOL)
+ *   MINT_B   = EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v  (USDC)
+ *   QUOTE    = EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v  (USDC)
  */
 
 import { z } from 'zod';
@@ -43,12 +48,3 @@ export const ConfigSchema = z.object({
 }));
 
 export type Config = z.infer<typeof ConfigSchema>;
-
-/**
- * Default token addresses (for reference and .env.example)
- */
-export const DEFAULT_VALUES = {
-  mintA: 'So11111111111111111111111111111111111111112',   // Wrapped SOL
-  mintB: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
-  quoteMint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
-} as const;

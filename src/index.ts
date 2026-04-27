@@ -29,6 +29,7 @@ program
   .option('--interval <ms>', 'Polling interval in ms (min: 500)', (v) => parseInt(v, 10))
   .option('--min-profit <number>', 'Minimum net profit threshold', (v) => parseFloat(v))
   .option('--trade-size <number>', 'Simulated trade size', (v) => parseFloat(v))
+  .option('--max-slippage <number>', 'Max allowed slippage per swap leg as a decimal (e.g. 0.05 = 5%)', (v) => parseFloat(v))
   .option('--log-level <level>', 'Log level (error|warn|info|debug)')
   .action(async (positionalMintA, positionalMintB, options) => {
     try {
@@ -41,6 +42,7 @@ program
         pollingIntervalMs: options.interval,
         minProfitThreshold: options.minProfit,
         tradeSize: options.tradeSize,
+        maxSlippagePercent: options.maxSlippage,
         logLevel: options.logLevel,
       };
 
@@ -63,6 +65,7 @@ program
         intervalMs: finalConfig.pollingIntervalMs,
         minProfit: finalConfig.minProfitThreshold,
         tradeSize: finalConfig.tradeSize,
+        maxSlippagePercent: finalConfig.maxSlippagePercent,
       });
 
       await startMonitor(finalConfig);

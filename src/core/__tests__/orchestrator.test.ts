@@ -1,7 +1,7 @@
 // core/__tests__/orchestrator.test.ts
 /**
  * Unit tests for ArbitrageOrchestrator public API.
- * RPC client is mocked — no network calls are made.
+ * RPC client and pool discovery are mocked — no network calls are made.
  */
 
 import { ArbitrageOrchestrator } from '../orchestrator';
@@ -10,6 +10,7 @@ import { SolanaRpcClient } from '../../solana/client';
 jest.mock('../../solana/client');
 jest.mock('../../solana/poolDiscovery', () => ({
   findPoolsForPair: jest.fn(),
+  refreshPoolReserves: jest.fn(),
 }));
 jest.mock('../../ui/renderer', () => ({
   Renderer: jest.fn().mockImplementation(() => ({
@@ -20,12 +21,11 @@ jest.mock('../../ui/renderer', () => ({
   })),
 }));
 
-import { findPoolsForPair } from '../../solana/poolDiscovery';
+import { findPoolsForPair, refreshPoolReserves } from '../../solana/poolDiscovery';
 
 // Valid base58 Solana addresses used as stand-in pool addresses in tests.
-// new PublicKey() validates base58 — short strings like 'pool1' throw at runtime.
-const POOL_1 = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA'; // SPL Token Program
-const POOL_2 = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bsB'; // Associated Token Program
+const POOL_1 = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const POOL_2 = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe1bsB';
 
 const BASE_CONFIG = {
   rpcUrl: 'http://mock-rpc',
@@ -40,20 +40,51 @@ const BASE_CONFIG = {
   logLevel: 'error' as const,
 };
 
+const MOCK_POOLS = [
+  {
+    address: POOL_1,
+    tokenA: BASE_CONFIG.mintA,
+    tokenB: BASE_CONFIG.mintB,
+    reserveA: 1_000_000_000n,
+    reserveB: 1_000_000_000n,
+    decimalsA: 9,
+    decimalsB: 6,
+    feeBps: 25,
+  },
+  {
+    address: POOL_2,
+    tokenA: BASE_CONFIG.mintA,
+    tokenB: BASE_CONFIG.mintB,
+    reserveA: 1_000_000_000n,
+    reserveB: 1_050_000_000n,
+    decimalsA: 9,
+    decimalsB: 6,
+    feeBps: 25,
+  },
+];
+
 describe('ArbitrageOrchestrator', () => {
   let mockRpcClient: jest.Mocked<SolanaRpcClient>;
 
   beforeEach(() => {
     jest.clearAllMocks();
+
     mockRpcClient = new SolanaRpcClient('http://mock-rpc') as jest.Mocked<SolanaRpcClient>;
     mockRpcClient.healthCheck.mockResolvedValue(true);
     mockRpcClient.getRpcUrl.mockReturnValue('http://mock-rpc');
     mockRpcClient.getMultipleAccounts.mockResolvedValue(new Map());
 
-    // Inject mock via constructor replacement
     (SolanaRpcClient as jest.MockedClass<typeof SolanaRpcClient>)
       .mockImplementation(() => mockRpcClient);
+
+    // Default: discovery returns two pools, refresh returns same pools
+    (findPoolsForPair as jest.Mock).mockResolvedValue(MOCK_POOLS);
+    (refreshPoolReserves as jest.Mock).mockResolvedValue(MOCK_POOLS);
   });
+
+  // ---------------------------------------------------------------------------
+  // Initial state
+  // ---------------------------------------------------------------------------
 
   describe('initial state', () => {
     it('should start with isRunning = false', () => {
@@ -75,6 +106,10 @@ describe('ArbitrageOrchestrator', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // start()
+  // ---------------------------------------------------------------------------
+
   describe('start()', () => {
     it('should not start if pool discovery returns no pools', async () => {
       (findPoolsForPair as jest.Mock).mockResolvedValue([]);
@@ -85,69 +120,35 @@ describe('ArbitrageOrchestrator', () => {
       expect(orchestrator.getState().isRunning).toBe(false);
     });
 
-    it('should not start twice if already running', async () => {
-      (findPoolsForPair as jest.Mock).mockResolvedValue([
-        {
-          address: POOL_1,
-          tokenA: BASE_CONFIG.mintA,
-          tokenB: BASE_CONFIG.mintB,
-          reserveA: 1_000_000_000n,
-          reserveB: 1_000_000_000n,
-          decimalsA: 9,
-          decimalsB: 6,
-          feeBps: 25,
-        },
-        {
-          address: POOL_2,
-          tokenA: BASE_CONFIG.mintA,
-          tokenB: BASE_CONFIG.mintB,
-          reserveA: 1_000_000_000n,
-          reserveB: 1_050_000_000n,
-          decimalsA: 9,
-          decimalsB: 6,
-          feeBps: 25,
-        },
-      ]);
-
+    it('should set isRunning = true after successful discovery', async () => {
       const orchestrator = new ArbitrageOrchestrator(BASE_CONFIG);
       await orchestrator.start();
 
       expect(orchestrator.getState().isRunning).toBe(true);
+      expect(orchestrator.getState().poolsFound).toBe(MOCK_POOLS.length);
 
-      // Second start() call should be a no-op — state must not change
+      orchestrator.stop();
+    });
+
+    it('should not start twice if already running', async () => {
+      const orchestrator = new ArbitrageOrchestrator(BASE_CONFIG);
       await orchestrator.start();
       expect(orchestrator.getState().isRunning).toBe(true);
-      expect(orchestrator.getState().poolsFound).toBeGreaterThan(0);
+
+      // Second start() call should be a no-op
+      await orchestrator.start();
+      expect(findPoolsForPair).toHaveBeenCalledTimes(1);
 
       orchestrator.stop();
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // stop()
+  // ---------------------------------------------------------------------------
+
   describe('stop()', () => {
     it('should set isRunning to false', async () => {
-      (findPoolsForPair as jest.Mock).mockResolvedValue([
-        {
-          address: POOL_1,
-          tokenA: BASE_CONFIG.mintA,
-          tokenB: BASE_CONFIG.mintB,
-          reserveA: 1_000_000_000n,
-          reserveB: 1_000_000_000n,
-          decimalsA: 9,
-          decimalsB: 6,
-          feeBps: 25,
-        },
-        {
-          address: POOL_2,
-          tokenA: BASE_CONFIG.mintA,
-          tokenB: BASE_CONFIG.mintB,
-          reserveA: 1_000_000_000n,
-          reserveB: 1_050_000_000n,
-          decimalsA: 9,
-          decimalsB: 6,
-          feeBps: 25,
-        },
-      ]);
-
       const orchestrator = new ArbitrageOrchestrator(BASE_CONFIG);
       await orchestrator.start();
       orchestrator.stop();
@@ -161,6 +162,10 @@ describe('ArbitrageOrchestrator', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // getState()
+  // ---------------------------------------------------------------------------
+
   describe('getState()', () => {
     it('should return a copy, not a reference', () => {
       const orchestrator = new ArbitrageOrchestrator(BASE_CONFIG);
@@ -170,12 +175,52 @@ describe('ArbitrageOrchestrator', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // getLastOpportunities()
+  // ---------------------------------------------------------------------------
+
   describe('getLastOpportunities()', () => {
     it('should return a copy of the opportunities array', () => {
       const orchestrator = new ArbitrageOrchestrator(BASE_CONFIG);
       const opps1 = orchestrator.getLastOpportunities();
       const opps2 = orchestrator.getLastOpportunities();
       expect(opps1).not.toBe(opps2);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // refreshPoolReserves integration
+  // ---------------------------------------------------------------------------
+
+  describe('refreshPoolReserves', () => {
+    it('should call refreshPoolReserves on each update cycle', async () => {
+      const orchestrator = new ArbitrageOrchestrator(BASE_CONFIG);
+      await orchestrator.start();
+
+      // Wait for at least one polling cycle
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      orchestrator.stop();
+
+      expect(refreshPoolReserves).toHaveBeenCalled();
+      expect(refreshPoolReserves).toHaveBeenCalledWith(
+        MOCK_POOLS,
+        mockRpcClient,
+        BASE_CONFIG.mintA,
+        BASE_CONFIG.mintB,
+      );
+    });
+
+    it('should stop update cycle when refreshPoolReserves returns empty array', async () => {
+      (refreshPoolReserves as jest.Mock).mockResolvedValue([]);
+
+      const orchestrator = new ArbitrageOrchestrator(BASE_CONFIG);
+      await orchestrator.start();
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      orchestrator.stop();
+
+      // poolsFound should reflect the empty refresh result
+      expect(orchestrator.getState().totalUpdates).toBe(0);
     });
   });
 });

@@ -9,10 +9,8 @@
  * - Rendering results
  */
 
-import { PublicKey } from '@solana/web3.js';
 import { SolanaRpcClient } from '../solana/client';
-import { findPoolsForPair } from '../solana/poolDiscovery';
-import { decodePoolState, isSwapEnabled, readVaultBalance, buildRawPool, parseAmmConfigFee } from '../solana/parsers';
+import { findPoolsForPair, refreshPoolReserves } from '../solana/poolDiscovery';
 import { findArbitrageOpportunities, getTopOpportunities, getOpportunityStats } from './arbitrage';
 import { RawPool, ArbitrageConfig, Opportunity } from './types';
 import { Renderer } from '../ui/renderer';
@@ -199,11 +197,23 @@ export class ArbitrageOrchestrator {
       return;
     }
 
-    const refreshed = await this.refreshPoolData();
-    if (!refreshed) {
-      logger.warn('Failed to refresh pool data, skipping render');
+    // Delegate reserve refresh entirely to poolDiscovery layer.
+    // refreshPoolReserves handles: decode → vault fetch → assemble,
+    // and falls back to full re-discovery if all pools have disappeared.
+    const updatedPools = await refreshPoolReserves(
+      this.rawPools,
+      this.rpcClient,
+      this.mintA,
+      this.mintB,
+    );
+
+    if (updatedPools.length === 0) {
+      logger.warn('No pools available after refresh, skipping arbitrage search');
       return;
     }
+
+    this.rawPools = updatedPools;
+    this.state.poolsFound = updatedPools.length;
 
     if (this.rawPools.length < 2) {
       logger.warn('Less than 2 pools available, skipping arbitrage search');
@@ -226,8 +236,8 @@ export class ArbitrageOrchestrator {
       tradeSize: this.config.tradeSize,
     });
 
-    if (opportunities.length > 0 && opportunities[0]) {
-      const best = opportunities[0];
+    const best = opportunities[0];
+    if (best) {
       logOpportunity(
         best.netProfit,
         best.profitPercent,
@@ -251,95 +261,12 @@ export class ArbitrageOrchestrator {
   }
 
   // ---------------------------------------------------------------------------
-  // SDK Reserve Updates
-  // ---------------------------------------------------------------------------
-
-  private async refreshPoolData(): Promise<boolean> {
-    if (this.rawPools.length === 0) {
-      return await this.discoverPools();
-    }
-
-    const poolAddresses = this.rawPools.map((p) => new PublicKey(p.address));
-    const poolAccounts = await this.rpcClient.getMultipleAccounts(poolAddresses);
-
-    const decodedPools: Array<{
-      address: string;
-      state: NonNullable<ReturnType<typeof decodePoolState>>;
-    }> = [];
-
-    for (const pool of this.rawPools) {
-      const accountInfo = poolAccounts.get(pool.address);
-      if (!accountInfo) {
-        logger.debug('Pool account not found', { address: pool.address.slice(0, 8) });
-        continue;
-      }
-
-      const state = decodePoolState(new PublicKey(pool.address), accountInfo);
-      if (!state || !isSwapEnabled(state)) continue;
-
-      decodedPools.push({ address: pool.address, state });
-    }
-
-    if (decodedPools.length === 0) {
-      logger.warn('All pools disappeared, re-discovering...');
-      return await this.discoverPools();
-    }
-
-    const vaultAndConfigAddresses = decodedPools.flatMap(({ state }) => [
-      state.vaultA,
-      state.vaultB,
-      state.configId,
-    ]);
-
-    const accountsMap = await this.rpcClient.getMultipleAccounts(vaultAndConfigAddresses);
-
-    const updatedPools: RawPool[] = [];
-
-    for (const { address, state } of decodedPools) {
-      const vault0Info = accountsMap.get(state.vaultA.toString());
-      const vault1Info = accountsMap.get(state.vaultB.toString());
-      const configInfo = accountsMap.get(state.configId.toString());
-
-      if (!vault0Info || !vault1Info) continue;
-
-      const reserve0 = readVaultBalance(vault0Info);
-      const reserve1 = readVaultBalance(vault1Info);
-
-      if (reserve0 === null || reserve1 === null) continue;
-
-      const feeBps = configInfo ? parseAmmConfigFee(configInfo) : 25;
-
-      const pool = buildRawPool(
-        address,
-        state,
-        reserve0,
-        reserve1,
-        feeBps,
-        this.mintA,
-        this.mintB,
-      );
-
-      if (pool) updatedPools.push(pool);
-    }
-
-    this.rawPools = updatedPools;
-    this.state.poolsFound = updatedPools.length;
-
-    logger.debug('Pool data refreshed', { total: this.rawPools.length });
-
-    return updatedPools.length > 0;
-  }
-
-  // ---------------------------------------------------------------------------
   // Error handling
   // ---------------------------------------------------------------------------
 
   private handleUpdateError(error: Error): void {
     this.state.lastError = error.message;
     logError(error, 'updateCycle');
-
-    // Show the error on screen so the user knows what happened
-    // instead of leaving the last successful render frozen on screen.
     this.renderer.renderError(error);
 
     if (error.message.includes('RPC call failed')) {
@@ -370,13 +297,13 @@ export async function startMonitor(
 ): Promise<ArbitrageOrchestrator> {
   const orchestrator = new ArbitrageOrchestrator(config);
 
-  process.on('SIGINT', () => {
+  process.once('SIGINT', () => {
     logger.info('Received SIGINT, stopping...');
     orchestrator.stop();
     process.exit(0);
   });
 
-  process.on('SIGTERM', () => {
+  process.once('SIGTERM', () => {
     logger.info('Received SIGTERM, stopping...');
     orchestrator.stop();
     process.exit(0);

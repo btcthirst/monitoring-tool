@@ -1,13 +1,13 @@
 // config/index.ts
 /**
- * Load and validate configuration
+ * Load and validate configuration.
  *
  * Priority: CLI args > .env > defaults
  */
 
 import { config as dotenvConfig } from 'dotenv';
 import { ZodError } from 'zod';
-import { ConfigSchema, Config, DEFAULT_VALUES } from './schema';
+import { ConfigSchema, Config } from './schema';
 
 // Load .env (called once on module import)
 dotenvConfig();
@@ -66,9 +66,7 @@ export function loadConfig(cliOverrides?: Partial<Config>): Config {
   };
 
   try {
-    const parsed = ConfigSchema.parse(merged);
-
-    return parsed;
+    return ConfigSchema.parse(merged);
   } catch (error) {
     if (error instanceof ZodError) {
       const issues = error.issues
@@ -81,4 +79,4 @@ export function loadConfig(cliOverrides?: Partial<Config>): Config {
 }
 
 // Re-export types so consumers don't import directly from schema
-export { ConfigSchema, type Config, DEFAULT_VALUES } from './schema';
+export { ConfigSchema, type Config } from './schema';

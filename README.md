@@ -71,7 +71,7 @@ The application is configured primarily through the `.env` file. Below are all s
 | `TRADE_SIZE` | number | `100` | The amount of `QUOTE_MINT` to use for simulating the arbitrage trade. |
 | `MAX_SLIPPAGE_PERCENT`| number | `0.05` | Maximum allowed slippage (e.g., 0.05 = 5%). |
 | `TX_COST_IN_QUOTE` | number | `0.0002` | Estimated transaction network fee measured in `QUOTE_MINT`. |
-| `LOG_LEVEL` | string | `info` | Logging verbosity (`error`, `warn`, `info`, `debug`). |
+| `LOG_LEVEL` | string | `info` | Logging verbosity (`error`, `warn`, `info`, `http`, `debug`). `http` logs RPC call traces. |
 
 ## 💻 Usage
 

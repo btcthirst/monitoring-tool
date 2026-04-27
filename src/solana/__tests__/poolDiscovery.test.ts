@@ -34,7 +34,7 @@ describe('poolDiscovery.ts', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockRpcClient = new SolanaRpcClient('http://localhost') as jest.Mocked<SolanaRpcClient>;
-    
+
     (parsers.decodePoolState as jest.Mock).mockReset();
     (parsers.isSwapEnabled as jest.Mock).mockReset();
     (parsers.readVaultBalance as jest.Mock).mockReset();
@@ -83,7 +83,7 @@ describe('poolDiscovery.ts', () => {
       mockRpcClient.getProgramAccounts.mockResolvedValue([mockRawAccount]);
       (parsers.decodePoolState as jest.Mock).mockReturnValue(mockState);
       (parsers.isSwapEnabled as jest.Mock).mockReturnValue(true);
-      
+
       const accountsMap = new Map();
       accountsMap.set(vaultA.toString(), mockVaultInfo);
       accountsMap.set(vaultB.toString(), mockVaultInfo);
@@ -123,7 +123,7 @@ describe('poolDiscovery.ts', () => {
       ]);
       (parsers.decodePoolState as jest.Mock).mockReturnValue({ vaultA, vaultB, configId: PublicKey.unique() });
       (parsers.isSwapEnabled as jest.Mock).mockReturnValue(true);
-      
+
       mockRpcClient.getMultipleAccounts.mockResolvedValue(new Map()); // Missing vaults
 
       const pools = await findPoolsForPair(mockRpcClient, MINT_A, MINT_B, false);
@@ -132,35 +132,35 @@ describe('poolDiscovery.ts', () => {
     });
 
     it('should handle missing config data by using default fee', async () => {
-        const poolAddr = PublicKey.unique();
-        const vaultA = PublicKey.unique();
-        const vaultB = PublicKey.unique();
-        mockRpcClient.getProgramAccounts.mockResolvedValue([{ publicKey: poolAddr, account: {} as any }]);
-        (parsers.decodePoolState as jest.Mock).mockReturnValue({ vaultA, vaultB, configId: PublicKey.unique() });
-        (parsers.isSwapEnabled as jest.Mock).mockReturnValue(true);
-        (parsers.readVaultBalance as jest.Mock).mockReturnValue(100n);
-        
-        mockRpcClient.getMultipleAccounts.mockResolvedValue(new Map([
-            [vaultA.toString(), {} as any],
-            [vaultB.toString(), {} as any]
-        ])); // config missing
+      const poolAddr = PublicKey.unique();
+      const vaultA = PublicKey.unique();
+      const vaultB = PublicKey.unique();
+      mockRpcClient.getProgramAccounts.mockResolvedValue([{ publicKey: poolAddr, account: {} as any }]);
+      (parsers.decodePoolState as jest.Mock).mockReturnValue({ vaultA, vaultB, configId: PublicKey.unique() });
+      (parsers.isSwapEnabled as jest.Mock).mockReturnValue(true);
+      (parsers.readVaultBalance as jest.Mock).mockReturnValue(100n);
 
-        await findPoolsForPair(mockRpcClient, MINT_A, MINT_B, false);
-        expect(parsers.buildRawPool).toHaveBeenCalledWith(
-            expect.any(String),
-            expect.any(Object),
-            100n,
-            100n,
-            25, // default fee
-            MINT_A,
-            MINT_B
-        );
+      mockRpcClient.getMultipleAccounts.mockResolvedValue(new Map([
+        [vaultA.toString(), {} as any],
+        [vaultB.toString(), {} as any]
+      ])); // config missing
+
+      await findPoolsForPair(mockRpcClient, MINT_A, MINT_B, false);
+      expect(parsers.buildRawPool).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Object),
+        100n,
+        100n,
+        25, // default fee
+        MINT_A,
+        MINT_B
+      );
     });
 
     it('should use cache on subsequent calls', async () => {
       const UNIQUE_MINT_A = PublicKey.unique().toString();
       const UNIQUE_MINT_B = PublicKey.unique().toString();
-      
+
       const poolAddr = PublicKey.unique();
       const vaultA = PublicKey.unique();
       const vaultB = PublicKey.unique();
@@ -171,7 +171,7 @@ describe('poolDiscovery.ts', () => {
       (parsers.isSwapEnabled as jest.Mock).mockReturnValue(true);
       (parsers.readVaultBalance as jest.Mock).mockReturnValue(100n);
       (parsers.buildRawPool as jest.Mock).mockReturnValue({ address: 'cached_pool' });
-      
+
       const accountsMap = new Map();
       accountsMap.set(vaultA.toString(), {} as any);
       accountsMap.set(vaultB.toString(), {} as any);

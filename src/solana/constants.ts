@@ -57,6 +57,7 @@ export const DEFAULT_FEE_BPS = 25;
 export const MAX_ACCOUNTS_PER_RPC_CALL = 100;
 export const RPC_RETRY_ATTEMPTS = 3;
 export const RPC_RETRY_DELAY_MS = 1000;
+export const RPC_MIN_REQUEST_INTERVAL_MS = 50;
 
 // ---------------------------------------------------------------------------
 // SPL Token

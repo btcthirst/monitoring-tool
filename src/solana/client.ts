@@ -20,6 +20,7 @@ import {
   RPC_RETRY_ATTEMPTS,
   RPC_RETRY_DELAY_MS,
   MAX_ACCOUNTS_PER_RPC_CALL,
+  RPC_MIN_REQUEST_INTERVAL_MS,
 } from './constants';
 
 // ---------------------------------------------------------------------------
@@ -41,7 +42,7 @@ export class SolanaRpcClient {
   private readonly connection: Connection;
   private readonly rpcUrl: string;
   private lastRequestTime = 0;
-  private readonly minRequestIntervalMs = 50;
+  private readonly minRequestIntervalMs = RPC_MIN_REQUEST_INTERVAL_MS;
 
   constructor(rpcUrl: string, commitment: Commitment = 'confirmed') {
     this.rpcUrl = rpcUrl;
