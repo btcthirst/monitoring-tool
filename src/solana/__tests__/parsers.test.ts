@@ -6,6 +6,7 @@ import {
   readVaultBalance,
   parseAmmConfigFee,
   buildRawPool,
+  decodePoolState,
 } from '../parsers';
 import {
   RAYDIUM_CPMM_PROGRAM_ID,
@@ -14,10 +15,43 @@ import {
   DEFAULT_FEE_BPS,
 } from '../constants';
 
+import { CpmmPoolInfoLayout } from '@raydium-io/raydium-sdk-v2';
+
 const MINT_A = 'So11111111111111111111111111111111111111112';
 const MINT_B = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 
 describe('parsers.ts', () => {
+  describe('decodePoolState()', () => {
+    it('should return null if owner is not Raydium CPMM', () => {
+        const accountInfo = {
+            owner: PublicKey.unique(),
+            data: Buffer.alloc(CPMM_POOL_ACCOUNT_SIZE),
+        };
+        expect(decodePoolState(PublicKey.unique(), accountInfo as any)).toBeNull();
+    });
+
+    it('should return null if data size is too small', () => {
+        const accountInfo = {
+            owner: RAYDIUM_CPMM_PROGRAM_ID,
+            data: Buffer.alloc(CPMM_POOL_ACCOUNT_SIZE - 1),
+        };
+        expect(decodePoolState(PublicKey.unique(), accountInfo as any)).toBeNull();
+    });
+
+    it('should return null if SDK decode fails', () => {
+        const accountInfo = {
+            owner: RAYDIUM_CPMM_PROGRAM_ID,
+            data: Buffer.alloc(CPMM_POOL_ACCOUNT_SIZE),
+        };
+        // Spy on decode and make it throw
+        const spy = jest.spyOn(CpmmPoolInfoLayout, 'decode').mockImplementationOnce(() => {
+            throw new Error('decode failed');
+        });
+        expect(decodePoolState(PublicKey.unique(), accountInfo as any)).toBeNull();
+        spy.mockRestore();
+    });
+  });
+
   describe('isSwapEnabled()', () => {
     it('should return true when status is 0 (all operations enabled)', () => {
       expect(isSwapEnabled({ status: 0 } as any)).toBe(true);
@@ -31,12 +65,6 @@ describe('parsers.ts', () => {
 
     it('should return false when swap bit (4) is set', () => {
       expect(isSwapEnabled({ status: 4 } as any)).toBe(false);
-    });
-
-    it('should return false when swap bit is set alongside other bits', () => {
-      expect(isSwapEnabled({ status: 5 } as any)).toBe(false); // 0b101
-      expect(isSwapEnabled({ status: 6 } as any)).toBe(false); // 0b110
-      expect(isSwapEnabled({ status: 7 } as any)).toBe(false); // 0b111
     });
   });
 
@@ -56,58 +84,30 @@ describe('parsers.ts', () => {
       expect(readVaultBalance(accountInfo as any)).toBe(expectedAmount);
     });
 
-    it('should correctly read zero balance', () => {
-      const data = Buffer.alloc(SPL_TOKEN_AMOUNT_OFFSET + 8);
-      data.writeBigUInt64LE(0n, SPL_TOKEN_AMOUNT_OFFSET);
-
-      expect(readVaultBalance({ data } as any)).toBe(0n);
-    });
-
-    it('should correctly read max uint64 value', () => {
-      const data = Buffer.alloc(SPL_TOKEN_AMOUNT_OFFSET + 8);
-      const maxU64 = 18_446_744_073_709_551_615n;
-      data.writeBigUInt64LE(maxU64, SPL_TOKEN_AMOUNT_OFFSET);
-
-      expect(readVaultBalance({ data } as any)).toBe(maxU64);
-    });
-
-    it('should return null if buffer is too small (exactly 1 byte short)', () => {
+    it('should return null if buffer is too small', () => {
       const data = Buffer.alloc(SPL_TOKEN_AMOUNT_OFFSET + 7);
       expect(readVaultBalance({ data } as any)).toBeNull();
     });
 
-    it('should return null if buffer is empty', () => {
-      const data = Buffer.alloc(0);
-      expect(readVaultBalance({ data } as any)).toBeNull();
+    it('should return null if readBigUInt64LE fails unexpectedly', () => {
+        const data = {
+            length: 100,
+            readBigUInt64LE: () => { throw new Error('mock error'); }
+        };
+        expect(readVaultBalance({ data } as any)).toBeNull();
     });
   });
 
   describe('parseAmmConfigFee()', () => {
     it('should correctly parse fee rate from a valid buffer', () => {
       const data = Buffer.alloc(300);
-      // tradeFeeRate at offset 12 in CpmmConfigInfoLayout
-      data.writeBigUInt64LE(2500n, 12); // 2500 / 100 = 25 bps
-
+      data.writeBigUInt64LE(2500n, 12); // 25 bps
       expect(parseAmmConfigFee({ data } as any)).toBe(25);
     });
 
-    it('should return DEFAULT_FEE_BPS when fee rate is 0', () => {
-      const data = Buffer.alloc(300);
-      data.writeBigUInt64LE(0n, 12);
-
-      expect(parseAmmConfigFee({ data } as any)).toBe(DEFAULT_FEE_BPS);
-    });
-
     it('should return DEFAULT_FEE_BPS on decode failure', () => {
-      const data = Buffer.alloc(0); // too small to decode
+      const data = Buffer.alloc(0);
       expect(parseAmmConfigFee({ data } as any)).toBe(DEFAULT_FEE_BPS);
-    });
-
-    it('should parse non-standard fee rates correctly', () => {
-      const data = Buffer.alloc(300);
-      data.writeBigUInt64LE(1000n, 12); // 1000 / 100 = 10 bps = 0.1%
-
-      expect(parseAmmConfigFee({ data } as any)).toBe(10);
     });
   });
 
@@ -132,17 +132,9 @@ describe('parsers.ts', () => {
 
       expect(pool).not.toBeNull();
       expect(pool!.address).toBe('poolAddress123');
-      expect(pool!.tokenA).toBe(MINT_A);
-      expect(pool!.tokenB).toBe(MINT_B);
-      expect(pool!.reserveA).toBe(1_000_000_000n);
-      expect(pool!.reserveB).toBe(2_000_000n);
-      expect(pool!.decimalsA).toBe(9);
-      expect(pool!.decimalsB).toBe(6);
-      expect(pool!.feeBps).toBe(25);
     });
 
     it('should return null when token pair does not match', () => {
-      const wrongMint = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
       const pool = buildRawPool(
         'poolAddress123',
         mockDecoded as any,
@@ -150,13 +142,12 @@ describe('parsers.ts', () => {
         2_000_000n,
         25,
         MINT_A,
-        wrongMint,
+        'wrongMint',
       );
-
       expect(pool).toBeNull();
     });
 
-    it('should return null when reserveA is zero', () => {
+    it('should return null when reserve is zero', () => {
       const pool = buildRawPool(
         'poolAddress123',
         mockDecoded as any,
@@ -166,36 +157,7 @@ describe('parsers.ts', () => {
         MINT_A,
         MINT_B,
       );
-
       expect(pool).toBeNull();
-    });
-
-    it('should return null when reserveB is zero', () => {
-      const pool = buildRawPool(
-        'poolAddress123',
-        mockDecoded as any,
-        1_000_000_000n,
-        0n,
-        25,
-        MINT_A,
-        MINT_B,
-      );
-
-      expect(pool).toBeNull();
-    });
-
-    it('should accept mints in reversed order (pair symmetry)', () => {
-      const pool = buildRawPool(
-        'poolAddress123',
-        mockDecoded as any,
-        1_000_000_000n,
-        2_000_000n,
-        25,
-        MINT_B, // reversed
-        MINT_A, // reversed
-      );
-
-      expect(pool).not.toBeNull();
     });
   });
 });

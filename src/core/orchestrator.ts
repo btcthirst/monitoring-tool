@@ -338,6 +338,10 @@ export class ArbitrageOrchestrator {
     this.state.lastError = error.message;
     logError(error, 'updateCycle');
 
+    // Show the error on screen so the user knows what happened
+    // instead of leaving the last successful render frozen on screen.
+    this.renderer.renderError(error);
+
     if (error.message.includes('RPC call failed')) {
       logger.warn('RPC error — will re-discover pools on next cycle');
       this.rawPools = [];

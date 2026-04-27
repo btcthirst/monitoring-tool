@@ -136,16 +136,6 @@ export class SolanaRpcClient {
     return combined;
   }
 
-  async getAccountInfo(
-    publicKey: PublicKey,
-    options?: RpcOptions,
-  ): Promise<AccountInfo<Buffer> | null> {
-    const results = await this.getMultipleAccounts([publicKey], options);
-    return results.get(publicKey.toString()) ?? null;
-  }
-
-
-
   async healthCheck(): Promise<boolean> {
     try {
       const start = Date.now();

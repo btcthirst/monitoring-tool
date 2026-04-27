@@ -37,7 +37,10 @@ export const ConfigSchema = z.object({
 
   // Logging
   logLevel: z.enum(['error', 'warn', 'info', 'http', 'debug']).default('info'),
-});
+}).transform((cfg) => ({
+  ...cfg,
+  quoteMint: cfg.quoteMint ?? cfg.mintB,
+}));
 
 export type Config = z.infer<typeof ConfigSchema>;
 

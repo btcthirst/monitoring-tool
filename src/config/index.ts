@@ -67,11 +67,6 @@ export function loadConfig(cliOverrides?: Partial<Config>): Config {
 
   try {
     const parsed = ConfigSchema.parse(merged);
-    
-    // Logic fallback: if quoteMint is not provided, use mintB
-    if (!parsed.quoteMint) {
-      parsed.quoteMint = parsed.mintB;
-    }
 
     return parsed;
   } catch (error) {

@@ -3,6 +3,7 @@
 import {
   normalizeAmount,
   getAmountOut,
+  getSpotPrice,
   simulateSwapAtoB,
   simulateSwapBtoA,
   simulateTwoHopArbitrage,
@@ -292,6 +293,30 @@ describe('pricing.ts', () => {
       const result = isProfitable(10, 0.5, 1, 0.05, 0.1, 0);
       // abs(0.1) > 0.05 → should fail
       expect(result.profitable).toBe(false);
+    });
+  });
+
+  describe('getSpotPrice()', () => {
+    it('should return reserveB/reserveA when quoteIsB (default)', () => {
+      // pool: reserveA=1000 BASE, reserveB=10000 QUOTE → price = 10 QUOTE per BASE
+      expect(getSpotPrice(makePool())).toBe(10);
+    });
+
+    it('should return reserveB/reserveA when quoteMint matches tokenB', () => {
+      expect(getSpotPrice(makePool(), QUOTE)).toBe(10);
+    });
+
+    it('should return reserveA/reserveB when quoteMint matches tokenA', () => {
+      // price expressed in BASE per QUOTE = 1000/10000 = 0.1
+      expect(getSpotPrice(makePool(), BASE)).toBe(0.1);
+    });
+
+    it('should return 0 when reserveA is zero (quoteIsB path)', () => {
+      expect(getSpotPrice(makePool({ reserveA: 0 }), QUOTE)).toBe(0);
+    });
+
+    it('should return 0 when reserveB is zero (quoteIsA path)', () => {
+      expect(getSpotPrice(makePool({ reserveB: 0 }), BASE)).toBe(0);
     });
   });
 });

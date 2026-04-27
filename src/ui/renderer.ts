@@ -119,11 +119,14 @@ export class Renderer {
 
   renderError(error: Error): void {
     this.clearScreen();
-    console.log(chalk.red.bold('\n❌ Error occurred'));
+    console.log(chalk.red.bold('\n❌ Update cycle failed'));
+    console.log(formatSeparator());
     console.log(chalk.red(`   ${error.message}`));
     const stackLine = error.stack?.split('\n')[1]?.trim();
     if (stackLine) console.log(chalk.gray(`   ${stackLine}`));
-    console.log(chalk.gray('\n   Monitor will retry on next cycle...\n'));
+    console.log(formatSeparator());
+    console.log(chalk.yellow('   ⟳  Retrying on next polling interval...'));
+    console.log(chalk.gray(`\n   Press ${chalk.white('Ctrl+C')} to exit`));
   }
 
   // ---------------------------------------------------------------------------
@@ -280,9 +283,24 @@ export class Renderer {
 
     console.log(
       chalk.gray(`  Updated: ${chalk.white(now)}`) +
-      chalk.gray(`   Last: ${sinceLastRender}`) +
+      chalk.gray(`   Last cycle: ${sinceLastRender}`) +
       chalk.gray(`   Renders: ${this.renderCount}`) +
-      chalk.gray(`   Opps: ${chalk.green(String(this.sessionOpportunities))}`),
+      chalk.gray(`   Session opps: ${chalk.green(String(this.sessionOpportunities))}`),
+    );
+
+    console.log(
+      chalk.gray('\n  Legend: ') +
+      chalk.cyan('buy pool') +
+      chalk.gray('  ') +
+      chalk.magenta('sell pool') +
+      chalk.gray('  ') +
+      chalk.green('profit > 0') +
+      chalk.gray('  ') +
+      chalk.yellow('slippage warn') +
+      chalk.gray('  ') +
+      chalk.red('high slippage') +
+      chalk.gray('  ') +
+      chalk.white('Price(buy) = spot price of base in quote'),
     );
 
     console.log(chalk.gray(`\n  Press ${chalk.white('Ctrl+C')} to exit`));

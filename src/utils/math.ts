@@ -2,13 +2,27 @@
 /**
  * Mathematical utilities for financial calculations.
  *
- * Decimal.js is used only for formatting and auxiliary operations.
- * Core arbitrage math (pricing.ts) uses native number —
- * sufficient for a monitoring tool and significantly faster.
+ * ## Design decision: native number in pricing.ts
  *
- * Note: float64 precision is adequate for price monitoring but may
- * accumulate error on very large reserve values. This tool signals
- * opportunities only — execution risk remains with the caller.
+ * Core CPMM math (pricing.ts) intentionally uses native float64, not Decimal.js.
+ * Rationale:
+ *   - float64 gives ~15 significant digits — sufficient for reserve values up to
+ *     ~10^12 tokens with 6-decimal precision (typical for USDC, USDT, etc.)
+ *   - Solana reserves are stored as u64 (max ~1.8 × 10^19 raw lamports).
+ *     After normalizeAmount() divides by 10^decimals, the working range is
+ *     well within float64 safe range for any realistic pool size.
+ *   - This tool signals opportunities only — it does not execute trades.
+ *     Sub-cent rounding error does not affect correctness of opportunity detection.
+ *   - Native arithmetic is ~10–100× faster than Decimal.js, which matters
+ *     in a tight polling loop across multiple pool pairs.
+ *
+ * Decimal.js is used for *output formatting* (formatNumber) because
+ * toFixed() rounding in JS has known edge cases (e.g. (1.005).toFixed(2) === '1.00').
+ * Decimal.ROUND_DOWN gives conservative, predictable display values.
+ *
+ * If this tool is extended to execute trades (not just monitor), migrate
+ * getAmountOut() and simulateTwoHopArbitrage() to use Decimal arithmetic
+ * to eliminate accumulated rounding error on multi-hop paths.
  */
 
 import Decimal from 'decimal.js';
@@ -31,42 +45,6 @@ function toDecimal(value: number | string | Decimal | bigint): Decimal {
   return new Decimal(value);
 }
 
-// ---------------------------------------------------------------------------
-// Basic operations with high precision
-// ---------------------------------------------------------------------------
-
-export function add(a: number | string | Decimal | bigint, b: number | string | Decimal | bigint): number {
-  return toDecimal(a).plus(toDecimal(b)).toNumber();
-}
-
-export function sub(a: number | string | Decimal | bigint, b: number | string | Decimal | bigint): number {
-  return toDecimal(a).minus(toDecimal(b)).toNumber();
-}
-
-export function mul(a: number | string | Decimal | bigint, b: number | string | Decimal | bigint): number {
-  return toDecimal(a).times(toDecimal(b)).toNumber();
-}
-
-/**
- * @throws {Error} on division by zero
- */
-export function div(a: number | string | Decimal | bigint, b: number | string | Decimal | bigint): number {
-  const divisor = toDecimal(b);
-  if (divisor.isZero()) throw new Error('Division by zero');
-  return toDecimal(a).dividedBy(divisor).toNumber();
-}
-
-export function abs(value: number | string | Decimal | bigint): number {
-  return toDecimal(value).abs().toNumber();
-}
-
-export function min(a: number | string | Decimal | bigint, b: number | string | Decimal | bigint): number {
-  return Decimal.min(toDecimal(a), toDecimal(b)).toNumber();
-}
-
-export function max(a: number | string | Decimal | bigint, b: number | string | Decimal | bigint): number {
-  return Decimal.max(toDecimal(a), toDecimal(b)).toNumber();
-}
 
 // ---------------------------------------------------------------------------
 // Formatting (used in UI and logger)
