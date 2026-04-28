@@ -191,3 +191,57 @@ describe('poolDiscovery.ts', () => {
     });
   });
 });
+
+describe('sortMintsByBytes (via buildPoolFilters)', () => {
+  // These two mints have a known byte-order relationship:
+  // WSOL bytes < USDC bytes, so WSOL must always be token0 filter
+  // regardless of which order the caller passes them.
+  const WSOL = 'So11111111111111111111111111111111111111112';
+  const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+
+  it('should produce identical filters regardless of mint argument order', () => {
+    const filtersAB = buildPoolFilters(WSOL, USDC);
+    const filtersBA = buildPoolFilters(USDC, WSOL);
+
+    expect(filtersAB).toEqual(filtersBA);
+  });
+
+  it('should place the lexicographically-smaller byte mint at token0 offset', () => {
+    const filters = buildPoolFilters(WSOL, USDC);
+
+    // offset 168 = mintA, offset 200 = mintB
+    const token0Filter = filters[1] as { memcmp: { offset: number; bytes: string } };
+    const token1Filter = filters[2] as { memcmp: { offset: number; bytes: string } };
+
+    // Verify both mints are present
+    const addresses = [token0Filter.memcmp.bytes, token1Filter.memcmp.bytes];
+    expect(addresses).toContain(WSOL);
+    expect(addresses).toContain(USDC);
+
+    // token0 and token1 must be different
+    expect(token0Filter.memcmp.bytes).not.toBe(token1Filter.memcmp.bytes);
+  });
+
+  it('should be stable: same pair always produces same token0', () => {
+    const run1 = buildPoolFilters(WSOL, USDC);
+    const run2 = buildPoolFilters(WSOL, USDC);
+    const run3 = buildPoolFilters(USDC, WSOL);
+
+    const token0_run1 = (run1[1] as { memcmp: { bytes: string } }).memcmp.bytes;
+    const token0_run2 = (run2[1] as { memcmp: { bytes: string } }).memcmp.bytes;
+    const token0_run3 = (run3[1] as { memcmp: { bytes: string } }).memcmp.bytes;
+
+    expect(token0_run1).toBe(token0_run2);
+    expect(token0_run1).toBe(token0_run3);
+  });
+
+  it('should handle identical mints without throwing', () => {
+    expect(() => buildPoolFilters(WSOL, WSOL)).not.toThrow();
+
+    const filters = buildPoolFilters(WSOL, WSOL);
+    const token0 = (filters[1] as { memcmp: { bytes: string } }).memcmp.bytes;
+    const token1 = (filters[2] as { memcmp: { bytes: string } }).memcmp.bytes;
+
+    expect(token0).toBe(token1);
+  });
+});

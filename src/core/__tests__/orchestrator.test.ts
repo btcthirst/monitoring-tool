@@ -193,12 +193,20 @@ describe('ArbitrageOrchestrator', () => {
   // ---------------------------------------------------------------------------
 
   describe('refreshPoolReserves', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
     it('should call refreshPoolReserves on each update cycle', async () => {
       const orchestrator = new ArbitrageOrchestrator(BASE_CONFIG);
       await orchestrator.start();
 
       // Wait for at least one polling cycle
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await jest.advanceTimersByTimeAsync(BASE_CONFIG.pollingIntervalMs);
       orchestrator.stop();
 
       expect(refreshPoolReserves).toHaveBeenCalled();
@@ -216,7 +224,7 @@ describe('ArbitrageOrchestrator', () => {
       const orchestrator = new ArbitrageOrchestrator(BASE_CONFIG);
       await orchestrator.start();
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await jest.advanceTimersByTimeAsync(BASE_CONFIG.pollingIntervalMs);
       orchestrator.stop();
 
       // poolsFound should reflect the empty refresh result

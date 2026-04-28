@@ -16,7 +16,7 @@ import { RawPool, ArbitrageConfig, Opportunity } from './types';
 import { Renderer } from '../ui/renderer';
 import { logger, setLogLevel, logError, logOpportunity } from '../logger/logger';
 import { PerformanceTimer, PeriodicExecutor } from '../utils/time';
-import { resolveSymbol } from '../ui/formatters';
+import { resolveSymbol } from '../utils/symbols';
 import { formatNumber } from '../utils/math';
 import { Config } from '../config';
 
@@ -264,6 +264,15 @@ export class ArbitrageOrchestrator {
   // Error handling
   // ---------------------------------------------------------------------------
 
+  /**
+   * Handle errors that bubble up from updateCycle().
+   *
+   * For RPC failures we reset rawPools to an empty array so that the
+   * *next* call to refreshPoolReserves receives an empty knownPools list.
+   * refreshPoolReserves treats an empty list as a signal to fall back to
+   * full pool discovery via getProgramAccounts — re-discovery therefore
+   * happens at the start of the following polling cycle, not here.
+   */
   private handleUpdateError(error: Error): void {
     this.state.lastError = error.message;
     logError(error, 'updateCycle');

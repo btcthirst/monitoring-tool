@@ -12,8 +12,6 @@ import Table from 'cli-table3';
 import chalk from 'chalk';
 import { Opportunity } from '../core/types';
 import {
-  formatAddress,
-  formatNumber,
   formatProfit,
   formatPercent,
   formatSlippage,
@@ -22,11 +20,13 @@ import {
   formatSeparator,
   formatKeyValue,
   formatRelativeTime,
-  formatCurrency,
   formatSpotPrice,
   visibleLength,
 } from './formatters';
+
 import { formatDuration } from '../utils/time';
+import { formatAddress, formatCurrency } from '../utils/symbols';
+import { formatNumber } from '../utils/math';
 
 // ---------------------------------------------------------------------------
 // Column widths (single source of truth)
@@ -44,15 +44,24 @@ const COL_WIDTHS = {
 };
 
 // ---------------------------------------------------------------------------
-// ANSI-safe helpers
+// ANSI-safe column helpers
+//
+// cli-table3 measures column width by raw string length, which counts
+// invisible ANSI escape codes as characters and breaks alignment.
+// These helpers operate on *visible* length (strip codes before measuring)
+// so every cell is padded/truncated to its true display width.
+// They live here rather than in formatters.ts because they are an
+// internal detail of table rendering, not a general formatting utility.
 // ---------------------------------------------------------------------------
 
+/** Pad a (possibly ANSI-colored) string to `width` visible characters. */
 function padAnsi(str: string, width: number): string {
   const len = visibleLength(str);
   if (len >= width) return str;
   return str + ' '.repeat(width - len);
 }
 
+/** Truncate to `width` visible characters, appending '…' if needed. */
 function truncateAnsi(str: string, width: number): string {
   if (visibleLength(str) <= width) return str;
 
@@ -61,6 +70,7 @@ function truncateAnsi(str: string, width: number): string {
   return clean.slice(0, width - 1) + '…';
 }
 
+/** Fit a string to exactly `width` visible characters: truncate then pad. */
 function fit(str: string, width: number): string {
   return padAnsi(truncateAnsi(str, width), width);
 }
@@ -135,6 +145,10 @@ export class Renderer {
     console.clear();
   }
 
+  /**
+   * Print the monitor title, separator, and current configuration summary
+   * (trade size, min profit, polling interval) on every render cycle.
+   */
   private renderHeader(options: RenderOptions): void {
     console.log(chalk.bold.cyan('\n🔍 Solana Arbitrage Monitor') + chalk.gray(' — Raydium CPMM'));
     console.log(formatSeparator());
@@ -148,6 +162,12 @@ export class Renderer {
     console.log(formatSeparator());
   }
 
+  /**
+   * Render a cli-table3 row for each opportunity in `slice`.
+   * Each numeric cell is fitted to a fixed visible width defined in COL_WIDTHS
+   * so the table stays aligned even when chalk injects ANSI codes of varying length.
+   * Falls back to renderEmpty() when the opportunities array is empty.
+   */
   private renderTable(opportunities: Opportunity[], options: RenderOptions): void {
     const maxDisplay = options.maxOpportunities ?? 15;
     const slice = opportunities.slice(0, maxDisplay);
@@ -227,6 +247,12 @@ export class Renderer {
     }
   }
 
+  /**
+   * Expanded detail block for the single best opportunity (opportunities[0]).
+   * Displays full pool addresses, precise prices, spread, TVL, and exact
+   * profit breakdown — information that would not fit in the summary table.
+   * No-op when opportunities is empty.
+   */
   private renderTopDetail(opp: Opportunity | undefined, options: RenderOptions): void {
     if (!opp) return;
 
@@ -268,11 +294,20 @@ export class Renderer {
     );
   }
 
+  /**
+   * Shown instead of the table when no opportunity passes the profit/slippage filters.
+   * Reminds the operator that the monitor is still running.
+   */
   private renderEmpty(): void {
     console.log(chalk.yellow('\n  ⏳ No profitable opportunities found'));
     console.log(chalk.gray('     Waiting for price discrepancies...'));
   }
 
+  /**
+   * Status bar printed after the table on every cycle:
+   * wall-clock time, time since last render, total render count, and
+   * cumulative session opportunity count.
+   */
   private renderFooter(opportunities: Opportunity[], options: RenderOptions): void {
     console.log(formatSeparator());
 

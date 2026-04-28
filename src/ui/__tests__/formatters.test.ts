@@ -1,5 +1,4 @@
 import {
-  formatAddress,
   formatProfit,
   formatPercent,
   formatSlippage,
@@ -8,10 +7,10 @@ import {
   formatRelativeTime,
   formatSeparator,
   formatKeyValue,
-  resolveSymbol,
-  formatCurrency,
   visibleLength,
 } from '../formatters';
+
+import { resolveSymbol, formatCurrency, formatAddress } from '../../utils/symbols';
 
 describe('ui formatters', () => {
   describe('addresses', () => {

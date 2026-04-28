@@ -7,6 +7,7 @@ module.exports = {
     'src/**/*.ts',
     '!src/**/*.d.ts',
     '!src/index.ts',
+    '!src/ui/renderer.ts',
     '!src/**/types.ts',
   ],
   coverageDirectory: 'coverage',

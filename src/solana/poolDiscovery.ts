@@ -22,6 +22,8 @@ import { logger } from '../logger/logger';
 import {
   RAYDIUM_CPMM_PROGRAM_ID,
   CPMM_POOL_ACCOUNT_SIZE,
+  CACHE_TTL_MS,
+  DEFAULT_FEE_BPS,
 } from './constants';
 import {
   decodePoolState,
@@ -33,18 +35,20 @@ import {
 } from './parsers';
 
 // ---------------------------------------------------------------------------
-// Constants
-// ---------------------------------------------------------------------------
-
-const CACHE_TTL_MS = 30_000;
-const DEFAULT_FEE_BPS = 25;
-
 // Offsets for memcmp filters — taken from SDK layout
+// ---------------------------------------------------------------------------
 const TOKEN_0_MINT_OFFSET = CpmmPoolInfoLayout.offsetOf('mintA');
 const TOKEN_1_MINT_OFFSET = CpmmPoolInfoLayout.offsetOf('mintB');
 
 // ---------------------------------------------------------------------------
 // Cache
+//
+// A module-level Map is sufficient here: pool discovery is the only
+// consumer, the cache key is always a sorted mint pair string, and
+// TTL eviction is cheap to do inline.  Extracting a dedicated cache
+// module would add indirection without benefit — if caching needs
+// (e.g. persistence, shared state across modules) grow in the future,
+// that is the right time to promote it.
 // ---------------------------------------------------------------------------
 
 interface CacheEntry {
